@@ -1,9 +1,9 @@
 'use strict';
 /*
- * Núcleo compartido: utilidades, almacenamiento y cálculo de asistencia.
- * PROTOTIPO DE INTERFAZ: los datos viven en localStorage del navegador.
- * En la fase de backend, TV.db se sustituye por llamadas al servidor/BD
- * y TV.calc se conserva como especificación de las reglas de negocio.
+ * Núcleo compartido: utilidades, datos en memoria y cálculo de asistencia para los reportes.
+ * Los datos NO viven en el navegador: los entrega el servidor (GET /api/admin/datos, solo administradores)
+ * y cada cambio pasa por la API. Las reglas oficiales están en backend/app/reglas.py; este cálculo es su
+ * espejo para pintar reportes, y una prueba automática verifica que ambos den lo mismo.
  */
 window.TV = window.TV || {};
 
@@ -23,16 +23,7 @@ window.TV = window.TV || {};
   const DIAS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
   const ORDEN_DIAS = [1, 2, 3, 4, 5, 6, 0]; // semana de lunes a domingo
 
-  const TIPOS = [
-    { id: 'corte-cfe', nombre: 'Corte de Energía CFE', duracion: true },
-    { id: 'falla-energia', nombre: 'Falla en el sistema de Energía interno', duracion: true },
-    { id: 'falla-equipo', nombre: 'Falla de equipo', duracion: true },
-    { id: 'pauta-rtc', nombre: 'Sustitución de pauta RTC', duracion: false },
-    { id: 'pauta-ine', nombre: 'Sustitución de pauta INE', duracion: false },
-    { id: 'ajuste-prog', nombre: 'Ajuste de programación', duracion: false },
-    { id: 'falla-programa', nombre: 'Falla de programa o videoclip', duracion: true },
-    { id: 'otro', nombre: 'Otro', duracion: true },
-  ];
+  const TIPOS = []; // se llenan desde el servidor (tabla tipo_incidencia)
 
   /* ---------- Utilidades ---------- */
   const pad = (n) => String(n).padStart(2, '0');
@@ -94,40 +85,25 @@ window.TV = window.TV || {};
     String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
   const tipoNombre = (id) => (TIPOS.find((t) => t.id === id) || { nombre: id }).nombre;
 
-  /* ---------- Almacenamiento (prototipo) ---------- */
-  const KEY = 'tvuaq.datos.v1';
-  let datos = null;
+  /* ---------- Hora del sistema ---------- */
+  // La hora oficial es la del servidor (en modo demostración puede estar movida a propósito)
+  let desfase = 0;
+  const ahora = () => Date.now() + desfase;
+  const sincronizarHora = (tsServidor) => {
+    desfase = tsServidor - Date.now();
+  };
+
+  /* ---------- Datos en memoria (los entrega el servidor) ---------- */
+  let datos = { operadores: [], registros: [], incidencias: [], justificaciones: [], ajustes: [] };
 
   const db = {
-    get() {
-      if (datos) return datos;
-      try {
-        datos = JSON.parse(localStorage.getItem(KEY));
-      } catch (e) {
-        datos = null;
-      }
-      if (!datos || !Array.isArray(datos.operadores)) {
-        datos = TV.seed.crear();
-        db.guardar();
-      }
-      datos.justificaciones = datos.justificaciones || [];
-      datos.ediciones = datos.ediciones || [];
-      datos.ajustes = datos.ajustes || []; // cambios manuales de estatus por turno (el vigente)
-      return datos;
+    get: () => datos,
+    cargar(nuevos) {
+      Object.assign(CFG, nuevos.cfg);
+      TIPOS.splice(0, TIPOS.length, ...nuevos.tipos);
+      datos = nuevos;
     },
-    guardar() {
-      try {
-        localStorage.setItem(KEY, JSON.stringify(datos));
-      } catch (e) {
-        console.warn('No se pudo guardar en localStorage', e);
-      }
-    },
-    reiniciar() {
-      datos = TV.seed.crear();
-      db.guardar();
-    },
-    uid: () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
-    operador: (id) => db.get().operadores.find((o) => o.id === id),
+    operador: (id) => datos.operadores.find((o) => o.id === id),
   };
 
   /* ---------- Cálculo de asistencia ---------- */
@@ -152,36 +128,17 @@ window.TV = window.TV || {};
           .forEach((h) =>
             out.push({
               fecha,
+              idHorario: h.id,
               turno: { inicio: h.inicio, fin: h.fin },
               iniTs: aTs(fecha, h.inicio),
               finTs: aTs(fecha, h.fin),
             })
           );
       }
-      return out.sort((a, b) => a.iniTs - b.iniTs);
-    },
-
-    // Entrada sin salida que todavía corresponde a un turno en curso
-    registroVigente(operadorId, ahora = Date.now()) {
-      return db
-        .get()
-        .registros.find(
-          (r) => r.operadorId === operadorId && !r.salidaTs && ahora <= r.finTs + CFG.graciaSinSalidaMin * MIN
-        );
-    },
-
-    // Turno al que corresponde una entrada hecha ahora (o undefined si no hay)
-    turnoParaEntrada(op, ahora = Date.now()) {
-      const hoy = ymd(new Date(ahora));
-      const registros = db.get().registros;
-      return calc
-        .turnosDe(op, hoy, hoy)
-        .filter(
-          (t) =>
-            ahora >= t.iniTs - CFG.anticipoEntradaMin * MIN &&
-            ahora < t.finTs &&
-            !registros.some((r) => r.operadorId === op.id && r.fecha === t.fecha && r.turno.inicio === t.turno.inicio)
-        )[0];
+      // Durante una baja no hay turnos (ni faltas); un reingreso los vuelve a programar
+      return out
+        .filter((t) => !(op.bajas || []).some((b) => b.desde <= t.iniTs && (b.hasta == null || t.iniTs < b.hasta)))
+        .sort((a, b) => a.iniTs - b.iniTs);
     },
 
     // 'a-tiempo' (hasta 5 min) · 'retardo' (hasta 10 min) · 'falta' (más de 10 min: se registra, pero como falta)
@@ -198,7 +155,7 @@ window.TV = window.TV || {};
      * Un turno justificado por el administrador deja de contar como falta, retardo, turno
      * incompleto y tiempo faltante, y se cuenta aparte en "justificadas".
      */
-    resumen(op, desde, hasta, ahora = Date.now(), { pendientes = false } = {}) {
+    resumen(op, desde, hasta, ahora = TV.ahora(), { pendientes = false } = {}) {
       const regs = db.get().registros.filter((r) => r.operadorId === op.id && r.fecha >= desde && r.fecha <= hasta);
       const justs = db.get().justificaciones.filter((j) => j.operadorId === op.id);
       const ajustes = db.get().ajustes.filter((x) => x.operadorId === op.id);
@@ -274,5 +231,5 @@ window.TV = window.TV || {};
     },
   };
 
-  Object.assign(TV, { CFG, DIAS, ORDEN_DIAS, TIPOS, MIN, db, calc, util: { pad, ymd, parseYmd, aTs, aMin, fmtFecha, fmtFechaLarga, fmtHora, fmtHoraSeg, fmtFechaHora, durCorta, durLarga, edad, esc, tipoNombre } });
+  Object.assign(TV, { CFG, DIAS, ORDEN_DIAS, TIPOS, MIN, db, calc, ahora, sincronizarHora, util: { pad, ymd, parseYmd, aTs, aMin, fmtFecha, fmtFechaLarga, fmtHora, fmtHoraSeg, fmtFechaHora, durCorta, durLarga, edad, esc, tipoNombre } });
 })(window.TV);

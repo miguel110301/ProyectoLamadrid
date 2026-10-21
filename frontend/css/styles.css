@@ -1274,3 +1274,40 @@ table.tabla {
     animation: none !important;
   }
 }
+
+/* Conexión con el sistema perdida (pantalla operativa) */
+.sensor-hero[data-estado='error'] {
+  background: var(--err); /* texto blanco legible: rojo sólido en lugar del degradado morado */
+}
+.sensor-hero[data-estado='error'] .sensor-hero__barras {
+  display: none;
+}
+
+/* Formulario de incidencia listo para enviarse con la huella */
+.sensor-pie[data-tono='ok'] {
+  border-color: #9fcfb1;
+  background: var(--ok-bg);
+  color: var(--ok);
+}
+
+/* Operadores dados de baja */
+.fila-baja {
+  background: var(--warn-bg);
+}
+.fila-baja .nombre {
+  color: var(--muted);
+}
+
+/* Panel de demostración */
+.sim hr {
+  border: 0;
+  border-top: 1px solid #e3dfe9;
+  margin: 0.1rem 0;
+}
+.sim .acciones {
+  flex-wrap: wrap;
+}
+body:has(.sim) .sitio,
+body:has(.sim) .op {
+  padding-bottom: 5rem; /* el panel de demostración no tapa el final de las tablas */
+}

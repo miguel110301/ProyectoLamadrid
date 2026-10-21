@@ -1,153 +1,132 @@
 'use strict';
 /*
- * Interfaz operativa. La pantalla siempre espera una huella y el sistema decide solo:
- * si la persona tiene una entrada abierta es su salida, y si no, es su entrada.
+ * Interfaz operativa. La pantalla siempre espera una huella; el servidor identifica a la persona y decide solo
+ * si es su entrada o su salida. Aquí solo se muestran los resultados que llegan por eventos.
+ * El navegador no guarda datos ni dice quién es nadie: lo único que envía es el formulario de incidencias
+ * y la confirmación de una salida anticipada.
  */
 (function (TV) {
   const { esc, fmtHoraSeg, fmtHora, fmtFechaLarga, durLarga, durCorta, pad, ymd } = TV.util;
-  const { ui, sensor } = TV;
+  const { ui, sensor, api } = TV;
   const $ = (id) => document.getElementById(id);
 
   $('btn-incidencia').innerHTML = `${ui.icono('alerta')}<span>Registrar incidencia</span>`;
 
   /* ---------- Reloj y panel "en turno" ---------- */
   function tick() {
-    const d = new Date();
+    const d = new Date(TV.ahora());
     $('reloj').textContent = fmtHoraSeg(d);
     $('fecha').textContent = fmtFechaLarga(d);
   }
   tick();
   setInterval(tick, 500);
 
-  function pintarEnTurno() {
-    const ahora = Date.now();
-    const filas = TV.db
-      .get()
-      .operadores.map((o) => ({ o, r: TV.calc.registroVigente(o.id, ahora) }))
-      .filter((x) => x.r);
-    $('en-turno').innerHTML = filas.length
-      ? filas
-          .map(
-            ({ o, r }) =>
-              `<li><span>${esc(o.nombre)}<small>Turno ${r.turno.inicio}–${r.turno.fin}</small></span><span class="insignia insignia--ok">${fmtHora(r.entradaTs)}</span></li>`
-          )
-          .join('')
-      : '<li class="vacio">Nadie ha registrado entrada todavía.</li>';
+  async function pintarEnTurno() {
+    try {
+      const filas = await api.get('/api/kiosko/en-turno');
+      $('en-turno').innerHTML = filas.length
+        ? filas.map((f) => `<li><span>${esc(f.nombre)}<small>Hasta las ${esc(f.fin)}</small></span><span class="insignia insignia--ok">${fmtHora(f.entrada_ts)}</span></li>`).join('')
+        : '<li class="vacio">Nadie ha registrado entrada todavía.</li>';
+    } catch (e) {
+      /* sin conexión: se conserva lo que ya estaba */
+    }
   }
-  pintarEnTurno();
-  setInterval(pintarEnTurno, 30000);
+  // La hora oficial es la del servidor: se revisa cada 30 s (corrige también saltos al resincronizar el reloj de la PC)
+  const sincronizarHora = () => api.get('/api/kiosko/hora').then((h) => TV.sincronizarHora(h.ts)).catch(() => {});
+  setInterval(() => {
+    sincronizarHora();
+    pintarEnTurno();
+  }, 30000);
+  window.addEventListener('tv:hora', pintarEnTurno);
 
-  /* ---------- Estado del sensor ---------- */
+  /* ---------- Estado del sensor y de la conexión con el sistema ---------- */
   $('sensor-ico').innerHTML = ui.icono('huella');
-  $('sensor-titulo').textContent = 'Coloca tu dedo en el sensor';
-  $('sensor-texto').textContent = 'El sistema detecta solo si es tu entrada o tu salida.';
-
-  /* ---------- Lectura de huella en la pantalla principal ---------- */
-  async function alLeer({ operadorId }) {
-    if (!operadorId) {
-      return ui.aviso({
-        tono: 'error',
-        titulo: 'Huella no reconocida',
-        mensaje: 'No se pudo identificar la huella.',
-        detalle: 'Limpia el dedo, colócalo bien sobre el sensor e intenta de nuevo.',
-        autocierre: 5000,
-      });
+  const normal = () => {
+    $('sensor-card').dataset.estado = '';
+    $('sensor-titulo').textContent = 'Coloca tu dedo en el sensor';
+    $('sensor-texto').textContent = 'El sistema detecta solo si es tu entrada o tu salida.';
+  };
+  normal();
+  sensor.alCambiarConexion((estado) => {
+    if (estado === 'desconectado') {
+      $('sensor-card').dataset.estado = 'error';
+      $('sensor-titulo').textContent = 'Sin conexión con el sistema';
+      $('sensor-texto').textContent = 'Reconectando… si tarda, avisa al administrador.';
+    } else {
+      normal();
+      if (estado === 'conectado') {
+        sincronizarHora();
+        pintarEnTurno();
+      }
     }
+  });
 
-    const op = TV.db.operador(operadorId);
-    const ahora = Date.now();
+  /* ---------- Avisos por cada evento del servidor ---------- */
+  const mensajeLlegada = {
+    'a-tiempo': () => `<span class="insignia insignia--ok estado-entrada">Llegaste a tiempo</span>`,
+    retardo: (ev) => `<span class="insignia insignia--warn estado-entrada">Retardo · ${durCorta(ev.min_tarde)} después de la hora de entrada</span>`,
+    falta: (ev) => `<span class="insignia insignia--err estado-entrada">Se registra falta · ${durCorta(ev.min_tarde)} después de la hora de entrada</span>`,
+  };
 
-    // La misma persona no puede registrar dos veces con un solo toque del dedo
-    const ultimo = TV.db.get().registros.filter((r) => r.operadorId === op.id).reduce((a, r) => Math.max(a, r.entradaTs, r.salidaTs || 0), 0);
-    if (ahora - ultimo < TV.CFG.reboteSeg * 1000) {
-      return ui.aviso({
-        tono: 'info',
-        titulo: 'Tu registro ya quedó guardado',
-        mensaje: `${esc(op.nombre)}, tu lectura de las ${fmtHoraSeg(ultimo)} ya se registró.`,
-        autocierre: 4000,
-      });
-    }
-
-    const abierto = TV.calc.registroVigente(op.id, ahora);
-    return abierto ? procesarSalida(op, abierto, ahora) : procesarEntrada(op, ahora);
-  }
-
-  async function procesarEntrada(op, ahora) {
-    const t = TV.calc.turnoParaEntrada(op, ahora);
-    if (!t) {
-      return ui.aviso({
-        tono: 'aviso',
-        titulo: 'No tienes un turno programado ahora',
-        mensaje: `${esc(op.nombre)}, no hay un turno tuyo que pueda registrarse en este momento.`,
-        detalle: `Puedes registrar entrada desde ${TV.CFG.anticipoEntradaMin} minutos antes de tu turno. Si crees que es un error, consulta al administrador.`,
-        autocierre: 10000,
-      });
-    }
-
-    TV.db.get().registros.push({
-      id: TV.db.uid(),
-      operadorId: op.id,
-      fecha: t.fecha,
-      turno: t.turno,
-      iniTs: t.iniTs,
-      finTs: t.finTs,
-      entradaTs: ahora,
-      salidaTs: null,
-      salidaAnticipada: false,
-    });
-    TV.db.guardar();
-    pintarEnTurno();
-
-    const llegada = TV.calc.estadoEntrada(ahora, t.iniTs);
-    const minTarde = Math.round((ahora - t.iniTs) / TV.MIN);
-    const mensajes = {
-      'a-tiempo': `<span class="insignia insignia--ok estado-entrada">Llegaste a tiempo</span>`,
-      retardo: `<span class="insignia insignia--warn estado-entrada">Retardo · ${durCorta(minTarde)} después de las ${t.turno.inicio}</span>`,
-      falta: `<span class="insignia insignia--err estado-entrada">Se registra falta · ${durCorta(minTarde)} después de las ${t.turno.inicio}</span>`,
-    };
-    return ui.aviso({
-      tono: llegada === 'a-tiempo' ? 'exito' : 'aviso',
-      titulo: `Registro de entrada con éxito a las ${fmtHoraSeg(ahora)}`,
-      mensaje: mensajes[llegada],
-      detalle: `${esc(op.nombre)} · Turno ${t.turno.inicio}–${t.turno.fin}${llegada === 'falta' ? ' · Debes cubrir tu turno; la falta puede justificarla el administrador' : ''}`,
-      autocierre: 12000,
-    });
-  }
-
-  async function procesarSalida(op, reg, ahora) {
-    const faltanMin = (reg.finTs - ahora) / TV.MIN;
-    let anticipada = false;
-    if (faltanMin > TV.CFG.toleranciaSalidaMin) {
-      const ok = await ui.confirmar({
-        titulo: 'Aún no termina tu turno',
-        mensaje: `Te faltan <strong>${durLarga(Math.ceil(faltanMin))}</strong> para salir.<br />¿Estás seguro de registrar tu salida antes de terminar el horario de turno?`,
-        aceptar: 'Registrar salida',
-        cancelar: 'Cancelar',
-      });
-      if (!ok) return;
-      anticipada = true;
-    }
-
-    const ts = Date.now(); // la hora real del registro es la de la confirmación
-    reg.salidaTs = ts;
-    reg.salidaAnticipada = anticipada;
-    TV.db.guardar();
-    pintarEnTurno();
-
-    const trabajado = Math.round((ts - reg.entradaTs) / TV.MIN);
-    const falto = Math.max(0, (reg.finTs - reg.iniTs) / TV.MIN - trabajado);
+  function mostrarSalida(ev) {
     return ui.aviso({
       tono: 'exito',
-      titulo: `Registro de salida con éxito a las ${fmtHoraSeg(ts)}`,
-      mensaje: `Estuviste en turno <strong>${durCorta(trabajado)}</strong>.`,
-      detalle: `${esc(op.nombre)}${falto > 0 ? ` · Te faltaron ${durCorta(falto)} para cumplir tu turno` : ''}`,
+      titulo: `Registro de salida con éxito a las ${fmtHoraSeg(ev.ts)}`,
+      mensaje: `Estuviste en turno <strong>${durCorta(ev.trabajado_min)}</strong>.`,
+      detalle: `${esc(ev.operador)}${ev.falto_min > 0 ? ` · Te faltaron ${durCorta(ev.falto_min)} para cumplir tu turno` : ''}`,
       autocierre: 12000,
     });
+  }
+
+  async function alEvento(ev) {
+    switch (ev.evento) {
+      case 'no-reconocida':
+        return ui.aviso({ tono: 'error', titulo: 'Huella no reconocida', mensaje: 'No se pudo identificar la huella.', detalle: 'Limpia el dedo, colócalo bien sobre el sensor e intenta de nuevo.', autocierre: 5000 });
+      case 'administrador':
+        return ui.aviso({ tono: 'info', titulo: 'Huella de administrador', mensaje: 'Las huellas de administración no registran asistencia.', detalle: 'Para entrar a la administración usa «Administración» en la parte superior.', autocierre: 6000 });
+      case 'duplicado':
+        return ui.aviso({ tono: 'info', titulo: 'Tu registro ya quedó guardado', mensaje: `${esc(ev.operador)}, tu lectura anterior ya se registró.`, autocierre: 4000 });
+      case 'sin-turno':
+        return ui.aviso({ tono: 'aviso', titulo: 'No tienes un turno programado ahora', mensaje: `${esc(ev.operador)}, no hay un turno tuyo que pueda registrarse en este momento.`, detalle: `Puedes registrar entrada desde ${ev.anticipo_min} minutos antes de tu turno. Si crees que es un error, consulta al administrador.`, autocierre: 10000 });
+      case 'entrada':
+        pintarEnTurno();
+        return ui.aviso({
+          tono: ev.llegada === 'a-tiempo' ? 'exito' : 'aviso',
+          titulo: `Registro de entrada con éxito a las ${fmtHoraSeg(ev.ts)}`,
+          mensaje: mensajeLlegada[ev.llegada](ev),
+          detalle: `${esc(ev.operador)} · Turno ${esc(ev.turno)}${ev.llegada === 'falta' ? ' · Debes cubrir tu turno; la falta puede justificarla el administrador' : ''}`,
+          autocierre: 12000,
+        });
+      case 'confirmar-salida': {
+        const ok = await ui.confirmar({
+          titulo: 'Aún no termina tu turno',
+          mensaje: `Te faltan <strong>${durLarga(ev.faltan_min)}</strong> para salir.<br />¿Estás seguro de registrar tu salida antes de terminar el horario de turno?`,
+          aceptar: 'Registrar salida',
+          cancelar: 'Cancelar',
+        });
+        try {
+          const r = await api.post('/api/kiosko/confirmar-salida', { aceptar: ok });
+          pintarEnTurno();
+          if (r.evento === 'salida') return mostrarSalida(r);
+        } catch (e) {
+          return ui.aviso({ tono: 'error', titulo: 'No se pudo registrar la salida', mensaje: esc(e.message), detalle: 'Vuelve a colocar tu huella.', autocierre: 8000 });
+        }
+        return;
+      }
+      case 'salida':
+        pintarEnTurno();
+        return mostrarSalida(ev);
+      case 'incidencia-incompleta':
+      case 'incidencia-registrada':
+        return; // solo importan con el formulario abierto
+      case 'error':
+        return ui.aviso({ tono: 'error', titulo: 'No se pudo completar el registro', mensaje: esc(ev.mensaje || ''), autocierre: 8000 });
+    }
   }
 
   /* ---------- Incidencias: se llena el formulario y la huella termina el registro ---------- */
   function formularioIncidencia() {
-    const ahora = new Date();
+    const ahora = new Date(TV.ahora());
     const nodo = document.createElement('form');
     nodo.noValidate = true;
     nodo.innerHTML = `
@@ -198,17 +177,21 @@
     return nodo;
   }
 
-  function registrarIncidencia() {
+  async function registrarIncidencia() {
+    await sincronizarHora();
     const form = formularioIncidencia();
     const m = ui.modal(form, { ancho: '44rem', cerrable: false });
-    // En este formulario el simulador va dentro del diálogo; el flotante se oculta mientras esté abierto
-    form.querySelector('[data-sim]').append(sensor.simuladorEnLinea());
+    // Con el formulario abierto el servidor ya no toma las huellas como entrada/salida; manda latidos mientras siga abierto
+    api.post('/api/kiosko/incidencia/abrir').catch(() => {});
+    const latido = setInterval(() => api.post('/api/kiosko/incidencia/abrir').catch(() => {}), 60000);
     sensor.visible(false);
-    m.promesa.then(() => sensor.visible(true));
+    sensor.simuladorEnLinea().then((s) => form.querySelector('[data-sim]').append(s));
+
     const campo = (n) => form.querySelector(`[data-campo="${n}"]`);
     const estado = form.querySelector('[data-estado]');
     const pie = form.querySelector('.sensor-pie');
     const duracionRequerida = () => (TV.TIPOS.find((t) => t.id === form.tipo.value) || {}).duracion === true;
+    const duracion = () => Number(form.dh.value || 0) * 60 + Number(form.dm.value || 0);
 
     const error = (nombre, texto) => {
       const c = campo(nombre);
@@ -223,59 +206,102 @@
       pie.dataset.tono = tono || '';
     };
 
-    form.tipo.addEventListener('change', () => {
+    // Devuelve los errores sin pintarlos (para decidir si el formulario ya está listo)
+    function problemas() {
+      const ahora = new Date(TV.ahora());
+      return {
+        hora: !form.hora.value ? 'Indica la hora de la incidencia.' : TV.util.aTs(ymd(ahora), form.hora.value) > ahora.getTime() ? 'La hora no puede ser posterior a la actual.' : '',
+        tipo: form.tipo.value ? '' : 'Selecciona el tipo de incidencia.',
+        duracion: duracionRequerida() && duracion() <= 0 ? 'Este tipo de incidencia requiere indicar la duración.' : '',
+        observacion: form.observacion.value.trim() ? '' : 'La observación es obligatoria.',
+      };
+    }
+    const completo = () => Object.values(problemas()).every((t) => !t);
+
+    // El formulario completo se deja listo en el servidor; la huella lo envía. Si queda incompleto, se retira.
+    let temporizador;
+    function sincronizar() {
+      clearTimeout(temporizador);
+      temporizador = setTimeout(async () => {
+        try {
+          if (completo()) {
+            await api.put('/api/kiosko/incidencia', {
+              tipo: form.tipo.value,
+              hora: form.hora.value,
+              programa: form.programa.value.trim(),
+              duracion_min: duracionRequerida() ? duracion() : null,
+              observacion: form.observacion.value.trim(),
+            });
+            aviso('Listo. Coloca tu huella en el sensor para registrar la incidencia.', 'ok');
+          } else {
+            await api.del('/api/kiosko/incidencia/borrador');
+            aviso('Completa los campos marcados y después coloca tu huella.', '');
+          }
+        } catch (e) {
+          aviso(e.message, 'error');
+        }
+      }, 300);
+    }
+    // Los errores que ya se mostraron se actualizan al corregir el campo
+    const refrescarErrores = () => Object.entries(problemas()).forEach(([k, t]) => campo(k).classList.contains('campo--invalido') && error(k, t));
+    form.addEventListener('input', () => {
+      refrescarErrores();
+      sincronizar();
+    });
+    form.addEventListener('change', () => {
       campo('duracion').hidden = !duracionRequerida();
-      error('tipo', '');
-      error('duracion', '');
+      refrescarErrores();
+      sincronizar();
     });
     form.addEventListener('submit', (e) => e.preventDefault());
-    form.querySelector('[data-cancelar]').addEventListener('click', () => m.cerrar(null));
 
-    function validar() {
-      const ahora = new Date();
-      const durMin = Number(form.dh.value || 0) * 60 + Number(form.dm.value || 0);
-      let mal = false;
-      mal = error('hora', !form.hora.value ? 'Indica la hora de la incidencia.' : TV.util.aTs(ymd(ahora), form.hora.value) > ahora.getTime() ? 'La hora no puede ser posterior a la actual.' : '') || mal;
-      mal = error('tipo', form.tipo.value ? '' : 'Selecciona el tipo de incidencia.') || mal;
-      mal = error('duracion', duracionRequerida() && durMin <= 0 ? 'Este tipo de incidencia requiere indicar la duración.' : '') || mal;
-      mal = error('observacion', form.observacion.value.trim() ? '' : 'La observación es obligatoria.') || mal;
-      if (mal) form.querySelector('.campo--invalido input, .campo--invalido select, .campo--invalido textarea')?.focus();
-      return !mal;
-    }
+    const cerrarTodo = (valor) => {
+      clearInterval(latido);
+      clearTimeout(temporizador);
+      api.del('/api/kiosko/incidencia').catch(() => {});
+      sensor.visible(true);
+      m.cerrar(valor);
+    };
+    form.querySelector('[data-cancelar]').addEventListener('click', () => cerrarTodo(null));
 
-    // Mientras el formulario esté abierto, la huella es la que "envía" el registro
-    const quitar = sensor.empujar(({ operadorId }) => {
-      if (!validar()) return aviso('Completa los campos marcados y vuelve a colocar tu huella.', 'error');
-      if (!operadorId) return aviso('Huella no reconocida. Intenta de nuevo.', 'error');
-
-      const reg = new Date();
-      TV.db.get().incidencias.push({
-        id: TV.db.uid(),
-        operadorId,
-        fecha: ymd(reg),
-        hora: form.hora.value,
-        registradoTs: reg.getTime(),
-        programa: form.programa.value.trim(),
-        duracionMin: duracionRequerida() ? Number(form.dh.value || 0) * 60 + Number(form.dm.value || 0) : null,
-        tipo: form.tipo.value,
-        observacion: form.observacion.value.trim(),
-      });
-      TV.db.guardar();
-      const tipo = TV.util.tipoNombre(form.tipo.value);
-      m.cerrar(true);
-      ui.aviso({
-        tono: 'exito',
-        titulo: 'Incidencia registrada',
-        mensaje: esc(tipo),
-        detalle: `${esc(TV.db.operador(operadorId).nombre)} · ${TV.util.fmtFechaHora(reg.getTime())}`,
-        autocierre: 8000,
-      });
+    const quitar = sensor.empujar((ev) => {
+      if (ev.evento === 'incidencia-registrada') {
+        clearInterval(latido);
+        clearTimeout(temporizador);
+        sensor.visible(true);
+        m.cerrar(true);
+        ui.aviso({
+          tono: 'exito',
+          titulo: 'Incidencia registrada',
+          mensaje: esc((TV.TIPOS.find((t) => t.id === form.tipo.value) || {}).nombre || ''),
+          detalle: `${esc(ev.operador)} · ${TV.util.fmtFechaHora(ev.ts)}`,
+          autocierre: 8000,
+        });
+      } else if (ev.evento === 'incidencia-incompleta') {
+        const p = problemas();
+        Object.entries(p).forEach(([k, t]) => error(k, t));
+        form.querySelector('.campo--invalido input, .campo--invalido select, .campo--invalido textarea')?.focus();
+        aviso('Completa los campos marcados y vuelve a colocar tu huella.', 'error');
+      } else if (ev.evento === 'no-reconocida') aviso('Huella no reconocida. Intenta de nuevo.', 'error');
+      else if (ev.evento === 'error') aviso(ev.mensaje || 'No se pudo registrar la incidencia.', 'error');
     });
     m.promesa.then(quitar);
   }
   $('btn-incidencia').addEventListener('click', registrarIncidencia);
 
-  // La pantalla principal queda escuchando desde que carga
-  sensor.empujar(alLeer);
+  /* ---------- Arranque ---------- */
+  async function iniciar() {
+    try {
+      const [tipos, hora] = await Promise.all([api.get('/api/kiosko/tipos-incidencia'), api.get('/api/kiosko/hora')]);
+      TV.TIPOS.splice(0, TV.TIPOS.length, ...tipos.map((t) => ({ id: t.id, nombre: t.nombre, duracion: !!t.requiere_duracion })));
+      TV.sincronizarHora(hora.ts);
+    } catch (e) {
+      /* el aviso de conexión ya lo muestra el estado del sensor */
+    }
+    pintarEnTurno();
+  }
+  sensor.empujar(alEvento);
+  sensor.conectar();
   sensor.montarSimulador('operador');
+  iniciar();
 })(window.TV);

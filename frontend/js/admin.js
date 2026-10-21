@@ -5,32 +5,29 @@
   const { ui, sensor, DIAS, ORDEN_DIAS } = TV;
   const app = document.getElementById('app');
 
-  // PROTOTIPO: credenciales de apoyo cuando falla el sensor. La validación real debe vivir en el backend.
-  const USUARIO = 'admin';
-  const CLAVE = 'admin';
-  const SESION = 'tvuaq.admin';
-  const autenticado = () => {
+  const { api } = TV;
+  let YO = null; // administrador con sesión (lo confirma el servidor, no el navegador)
+  const dormir = (ms) => new Promise((r) => setTimeout(r, ms));
+  // Cada cambio va a la API y después se recargan los datos para pintar lo que realmente quedó guardado
+  async function mutar(llamada, exito) {
     try {
-      return sessionStorage.getItem(SESION) === '1';
+      const r = await llamada();
+      await TV.cargarDatos();
+      if (exito) ui.toast(exito);
+      return r === undefined ? true : r;
     } catch (e) {
+      if (e.name !== 'AbortError') ui.toast(e.message, 'error');
       return false;
     }
-  };
-  const marcarSesion = (v) => {
-    try {
-      v ? sessionStorage.setItem(SESION, '1') : sessionStorage.removeItem(SESION);
-    } catch (e) {
-      /* sin sessionStorage: la sesión dura lo que dure la página */
-    }
-  };
+  }
 
-  const hoy = () => ymd(new Date());
+  const hoy = () => ymd(new Date(TV.ahora()));
   const primeroDeMes = () => {
-    const d = new Date();
+    const d = new Date(TV.ahora());
     return ymd(new Date(d.getFullYear(), d.getMonth(), 1));
   };
   // Filtros que se conservan al cambiar de reporte
-  const F = { pase: hoy(), preset: 'mes', desde: primeroDeMes(), hasta: hoy(), modoFecha: 'rango', fecha: hoy(), op: '', tipo: '', operador: '' };
+  const F = { pase: hoy(), preset: 'mes', desde: primeroDeMes(), hasta: hoy(), modoFecha: 'rango', fecha: hoy(), op: '', tipo: '', operador: '', verBajas: false };
 
   /* =========================================================
      ACCESO
@@ -68,7 +65,7 @@
               <div><button class="btn btn--primario" type="submit">Entrar</button></div>
             </form>
           </details>
-          <p class="nota-proto">Prototipo · usuario <strong>admin</strong> · contraseña <strong>admin</strong></p>
+          <p class="nota-proto" id="a-demo" hidden>Modo demostración · usuario <strong>demo</strong> · contraseña <strong>demo-tvuaq-26</strong></p>
         </main>
         <footer class="pie-sitio"><span>Control Maestro TvUAQ · Sistema de registro de incidencias</span></footer>
       </div>`;
@@ -86,42 +83,80 @@
       detalles.open = true;
     };
 
-    const quitar = sensor.empujar(({ operadorId }) => {
-      if (operadorId === 'admin') {
-        quitar();
-        return entrar();
-      }
-      if (!operadorId) return falla('Huella no reconocida', 'Intenta de nuevo o ingresa con usuario y contraseña.');
-      falla('Sin permisos de administrador', 'Esa huella pertenece a un operador. Usa la huella del administrador o tu usuario y contraseña.');
-    });
+    sensor.personas().then((p) => p && (document.getElementById('a-demo').hidden = false));
 
-    document.getElementById('a-form').addEventListener('submit', (e) => {
+    // El servidor espera la huella de un administrador; la huella de un operador no abre ninguna sesión
+    const cancelar = new AbortController();
+    detener = () => cancelar.abort();
+    (async function esperarHuella() {
+      while (!cancelar.signal.aborted) {
+        try {
+          await api.post('/api/auth/huella', {}, { signal: cancelar.signal, sinAvisoSesion: true });
+          return entrar();
+        } catch (e) {
+          if (e.name === 'AbortError') return;
+          if (e.codigo !== 'sin-huella') {
+            falla('Sin conexión con el sistema', 'Ingresa con usuario y contraseña o revisa que el servidor esté en marcha.');
+            await dormir(4000);
+          }
+        }
+      }
+    })();
+
+    document.getElementById('a-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const f = e.target;
       const err = document.getElementById('a-error');
-      if (f.usuario.value.trim() === USUARIO && f.clave.value === CLAVE) {
-        quitar();
+      try {
+        await api.post('/api/auth/login', { usuario: f.usuario.value.trim(), clave: f.clave.value }, { sinAvisoSesion: true });
         return entrar();
+      } catch (ex) {
+        err.hidden = false;
+        err.textContent = ex.message;
+        f.clave.value = '';
+        f.clave.focus();
       }
-      err.hidden = false;
-      err.textContent = 'Usuario o contraseña incorrectos.';
-      f.clave.value = '';
-      f.clave.focus();
     });
   }
 
-  function entrar() {
-    marcarSesion(true);
-    sensor.visible(false);
+  let detener = () => {};
+  async function entrar() {
+    detener();
+    try {
+      YO = await api.get('/api/auth/yo', { sinAvisoSesion: true });
+      await TV.cargarDatos();
+    } catch (e) {
+      return vistaAcceso();
+    }
     if (!location.hash) location.hash = '#/operadores';
     armarShell();
   }
-  function salir() {
-    marcarSesion(false);
+  async function salir() {
+    try {
+      await api.post('/api/auth/logout', {}, { sinAvisoSesion: true });
+    } catch (e) {
+      /* si ya no había sesión, da igual */
+    }
+    YO = null;
     sensor.visible(true);
     location.hash = '';
     vistaAcceso();
   }
+  // Si la sesión caduca (30 min sin usarla) cualquier llamada responde 401: se vuelve al acceso
+  window.addEventListener('tv:sesion', () => {
+    if (!YO) return;
+    YO = null;
+    sensor.visible(true);
+    location.hash = '';
+    vistaAcceso();
+    ui.toast('Tu sesión caducó. Ingresa de nuevo.', 'error');
+  });
+  window.addEventListener('tv:datos', async () => {
+    if (!YO) return;
+    await TV.cargarDatos();
+    ruta();
+  });
+  window.addEventListener('tv:hora', () => YO && document.getElementById('vista') && ruta());
 
   /* =========================================================
      ESTRUCTURA Y RUTAS
@@ -132,6 +167,7 @@
     asistencia: { titulo: 'Tabla de asistencias', icono: 'lista', vista: vistaAsistencia },
     individual: { titulo: 'Reporte individual', icono: 'usuario', vista: vistaIndividual },
     incidencias: { titulo: 'Incidencias', icono: 'alerta', vista: vistaIncidencias },
+    administradores: { titulo: 'Administradores', icono: 'candado', vista: vistaAdministradores },
   };
 
   function armarShell() {
@@ -147,27 +183,16 @@
           </nav>
           <div class="cab-sitio__acciones">
             <a class="btn btn--secundario btn--chico" href="index.html">Ir al registro</a>
+            <span class="regla" title="Sesión de administrador">${esc(YO.nombre)}</span>
             <button class="btn btn--primario btn--chico" id="b-salir" type="button">Cerrar sesión</button>
           </div>
         </header>
         <main class="contenido" id="vista"></main>
         <footer class="pie-sitio">
           <span>Control Maestro TvUAQ · Sistema de registro de incidencias</span>
-          <button id="b-demo" type="button">Restablecer datos de demostración</button>
         </footer>
       </div>`;
     document.getElementById('b-salir').addEventListener('click', salir);
-    document.getElementById('b-demo').addEventListener('click', async () => {
-      const ok = await ui.confirmar({
-        titulo: 'Restablecer datos de demostración',
-        mensaje: 'Se borrarán los operadores, asistencias e incidencias actuales y se cargarán datos de ejemplo.',
-        aceptar: 'Restablecer',
-      });
-      if (!ok) return;
-      TV.db.reiniciar();
-      ruta();
-      ui.toast('Datos de demostración cargados');
-    });
     ruta();
   }
 
@@ -183,7 +208,7 @@
     r.vista(document.getElementById('vista'));
     window.scrollTo(0, 0);
   }
-  window.addEventListener('hashchange', () => autenticado() && document.getElementById('vista') && ruta());
+  window.addEventListener('hashchange', () => YO && document.getElementById('vista') && ruta());
 
   const cabecera = (titulo, texto, acciones = '') =>
     `<div class="cabecera"><div class="titulo-seccion"><h1>${titulo}</h1><p>${texto}</p></div><div class="acciones">${acciones}</div></div>`;
@@ -199,35 +224,90 @@
       .join('');
   };
 
+  const MOTIVOS_BAJA = [
+    ['renuncia', 'Renuncia'],
+    ['despido', 'Despido'],
+    ['fin-de-contrato', 'Fin de contrato'],
+    ['otro', 'Otro'],
+  ];
+  const nombreMotivo = (m) => (MOTIVOS_BAJA.find(([v]) => v === m) || [0, m])[1];
+
   function vistaOperadores(main) {
-    const ops = TV.db.get().operadores.slice().sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+    const todos = TV.db.get().operadores.slice().sort((a, b) => a.nombre.localeCompare(b.nombre, 'es'));
+    const bajas = todos.filter((o) => !o.activo).length;
+    const ops = todos.filter((o) => o.activo || F.verBajas);
+    const accionesDe = (o) =>
+      o.activo
+        ? `<button class="btn btn--secundario btn--chico" data-editar="${o.id}" type="button">${ui.icono('editar')} Datos</button>
+           <button class="btn btn--secundario btn--chico" data-horarios="${o.id}" type="button">${ui.icono('reloj')} Horarios</button>
+           <button class="btn btn--texto btn--chico" data-baja="${o.id}" type="button">Dar de baja</button>`
+        : `<button class="btn btn--secundario btn--chico" data-reingreso="${o.id}" type="button">Reingresar</button>`;
     main.innerHTML =
-      cabecera('Operadores', 'Alta y registro del personal operador del Control Maestro.', `<button class="btn btn--primario" id="o-alta" type="button">${ui.icono('mas')} Alta de operador</button>`) +
+      cabecera('Operadores', 'Alta, baja y registro del personal operador del Control Maestro.', `<button class="btn btn--primario" id="o-alta" type="button">${ui.icono('mas')} Alta de operador</button>`) +
+      (bajas || F.verBajas
+        ? `<section class="tarjeta"><div class="tarjeta__cuerpo"><label class="opciones"><input type="checkbox" id="o-bajas" ${F.verBajas ? 'checked' : ''} /> Mostrar operadores dados de baja (${bajas})</label>
+           ${F.verBajas ? '<p class="regla">Un operador dado de baja se conserva 30 días por si fue un error; después se borran todos sus datos, su huella y su historial, sin posibilidad de recuperarlos.</p>' : ''}</div></section>`
+        : '') +
       `<section class="tarjeta"><div class="tabla-envoltura">${
         ops.length
           ? `<table class="tabla">
           <thead><tr><th>Nombre</th><th>Expediente</th><th>Carrera</th><th class="num">Edad</th><th>Horario</th><th>Huella</th><th><span class="solo-lectores">Acciones</span></th></tr></thead>
           <tbody>${ops
             .map(
-              (o) => `<tr>
-              <td class="nombre">${esc(o.nombre)}</td>
+              (o) => `<tr${o.activo ? '' : ' class="fila-baja"'}>
+              <td class="nombre">${esc(o.nombre)}${o.activo ? '' : `<div class="regla"><span class="insignia insignia--warn">De baja · ${esc(nombreMotivo(o.bajaMotivo))}</span> se borra en ${o.diasParaBorrado} ${o.diasParaBorrado === 1 ? 'día' : 'días'}</div>`}</td>
               <td>${esc(o.expediente)}</td>
               <td>${esc(o.carrera)}</td>
-              <td class="num">${edad(o.nacimiento)}</td>
+              <td class="num">${edad(o.nacimiento, new Date(TV.ahora()))}</td>
               <td class="horario">${resumenHorario(o)}</td>
               <td>${o.huella ? '<span class="insignia insignia--ok">Registrada</span>' : '<span class="insignia insignia--warn">Pendiente</span>'}</td>
-              <td><div class="acciones" style="flex-wrap: nowrap">
-                <button class="btn btn--secundario btn--chico" data-editar="${o.id}" type="button">${ui.icono('editar')} Datos</button>
-                <button class="btn btn--secundario btn--chico" data-horarios="${o.id}" type="button">${ui.icono('reloj')} Horarios</button>
-              </div></td></tr>`
+              <td><div class="acciones">${accionesDe(o)}</div></td></tr>`
             )
             .join('')}</tbody></table>`
           : '<div class="tarjeta__cuerpo"><p class="vacio vacio--caja">Aún no hay operadores. Usa “Alta de operador” para registrar al primero.</p></div>'
       }</div></section>`;
 
     main.querySelector('#o-alta').addEventListener('click', () => abrirOperador());
+    main.querySelector('#o-bajas')?.addEventListener('change', (e) => ((F.verBajas = e.target.checked), ruta()));
     main.querySelectorAll('[data-editar]').forEach((b) => b.addEventListener('click', () => abrirOperador(TV.db.operador(b.dataset.editar))));
     main.querySelectorAll('[data-horarios]').forEach((b) => b.addEventListener('click', () => abrirHorarios(TV.db.operador(b.dataset.horarios))));
+    main.querySelectorAll('[data-baja]').forEach((b) => b.addEventListener('click', () => abrirBaja(TV.db.operador(b.dataset.baja))));
+    main.querySelectorAll('[data-reingreso]').forEach((b) =>
+      b.addEventListener('click', async () => {
+        const o = TV.db.operador(b.dataset.reingreso);
+        const ok = await ui.confirmar({ titulo: 'Reingresar operador', mensaje: `${esc(o.nombre)} volverá a estar activo con su historial y su huella. Su horario se retoma desde hoy.`, aceptar: 'Reingresar' });
+        if (ok && (await mutar(() => api.post(`/api/admin/operadores/${o.id}/reingreso`), 'Operador reingresado'))) ruta();
+      })
+    );
+  }
+
+  function abrirBaja(op) {
+    const form = document.createElement('form');
+    form.noValidate = true;
+    form.innerHTML = `
+      <div class="modal__cab"><h2>Dar de baja</h2>
+        <button type="button" class="btn btn--texto btn--chico" data-cancelar aria-label="Cerrar">${ui.icono('x')}</button></div>
+      <div class="modal__cuerpo">
+        <p><strong>${esc(op.nombre)}</strong> · Expediente ${esc(op.expediente)}</p>
+        <label class="campo"><span class="campo__etiqueta">Motivo de la baja <span class="req">*</span></span>
+          <select name="motivo">${MOTIVOS_BAJA.map(([v, t]) => `<option value="${v}">${t}</option>`).join('')}</select></label>
+        <p class="regla"><strong>La baja es inmediata</strong>: ya no podrá registrar entradas, salidas ni incidencias, y no se le contarán más faltas.
+          Sus datos se conservan <strong>30 días</strong> por si fue un error (puedes reingresarlo en ese plazo). Pasado ese tiempo se borran
+          <strong>todos sus datos, su huella y su historial</strong>, sin posibilidad de recuperarlos. Si necesitas su reporte, genera el PDF antes.</p>
+      </div>
+      <div class="modal__pie">
+        <button type="button" class="btn btn--secundario" data-cancelar>Cancelar</button>
+        <button type="submit" class="btn btn--primario">Dar de baja</button>
+      </div>`;
+    const m = ui.modal(form, { ancho: '36rem', cerrable: false });
+    form.querySelectorAll('[data-cancelar]').forEach((b) => b.addEventListener('click', () => m.cerrar()));
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      if (await mutar(() => api.post(`/api/admin/operadores/${op.id}/baja`, { motivo: form.motivo.value }), 'Operador dado de baja')) {
+        m.cerrar();
+        ruta();
+      }
+    });
   }
 
   // Editor de turnos reutilizado en el alta y en "Horarios"
@@ -308,7 +388,8 @@
 
   function abrirOperador(op) {
     const nuevo = !op;
-    let huella = op ? op.huella : false;
+    let huella = op ? op.huella : false; // ya registrada en el servidor
+    let huellaNueva = false; // capturada en este formulario; se guarda al registrar al operador
     const horarios = nuevo ? editorHorarios([{ dia: 1, inicio: '07:00', fin: '13:00' }]) : null;
 
     const form = document.createElement('form');
@@ -317,8 +398,14 @@
       <div class="modal__cab"><h2>${nuevo ? 'Alta de operador' : 'Datos del operador'}</h2>
         <button type="button" class="btn btn--texto btn--chico" data-cancelar aria-label="Cerrar">${ui.icono('x')}</button></div>
       <div class="modal__cuerpo">
-        <label class="campo" data-campo="nombre"><span class="campo__etiqueta">Nombre completo <span class="req">*</span></span>
-          <input type="text" name="nombre" maxlength="120" autocomplete="off" value="${esc(op?.nombre)}" /><span class="campo__error" hidden></span></label>
+        <div class="rejilla" style="grid-template-columns: 1.2fr 1fr 1fr">
+          <label class="campo" data-campo="nombres"><span class="campo__etiqueta">Nombre(s) <span class="req">*</span></span>
+            <input type="text" name="nombres" maxlength="80" autocomplete="off" value="${esc(op?.nombres)}" /><span class="campo__error" hidden></span></label>
+          <label class="campo" data-campo="apPaterno"><span class="campo__etiqueta">Apellido paterno <span class="req">*</span></span>
+            <input type="text" name="apPaterno" maxlength="60" autocomplete="off" value="${esc(op?.apPaterno)}" /><span class="campo__error" hidden></span></label>
+          <label class="campo" data-campo="apMaterno"><span class="campo__etiqueta">Apellido materno</span>
+            <input type="text" name="apMaterno" maxlength="60" autocomplete="off" value="${esc(op?.apMaterno)}" /></label>
+        </div>
         <div class="rejilla">
           <label class="campo" data-campo="nacimiento"><span class="campo__etiqueta">Fecha de nacimiento <span class="req">*</span></span>
             <input type="date" name="nacimiento" max="${hoy()}" value="${op?.nacimiento || ''}" /><span class="campo__error" hidden></span></label>
@@ -358,10 +445,13 @@
     };
     pintarHuella();
     form.querySelector('[data-huella]').addEventListener('click', async () => {
-      if (await enrolarHuella()) {
-        huella = true;
-        pintarHuella();
-      }
+      if (!(await enrolarHuella())) return;
+      if (op) {
+        // Operador existente: la huella se guarda en el servidor al momento
+        if (!(await mutar(() => api.post(`/api/admin/operadores/${op.id}/huella`), 'Huella registrada'))) return;
+      } else huellaNueva = true;
+      huella = true;
+      pintarHuella();
     });
     form.querySelectorAll('[data-cancelar]').forEach((b) => b.addEventListener('click', () => m.cerrar()));
 
@@ -375,30 +465,38 @@
       return !!texto;
     };
 
-    form.addEventListener('submit', (ev) => {
+    form.addEventListener('submit', async (ev) => {
       ev.preventDefault();
       const exp = form.expediente.value.trim();
       const duplicado = TV.db.get().operadores.some((o) => o.expediente.toLowerCase() === exp.toLowerCase() && o.id !== op?.id);
       let mal = false;
-      mal = error('nombre', form.nombre.value.trim().split(/\s+/).filter(Boolean).length >= 2 ? '' : 'Escribe el nombre completo (nombre y apellido).') || mal;
-      mal = error('nacimiento', !form.nacimiento.value ? 'Indica la fecha de nacimiento.' : form.nacimiento.value > hoy() ? 'La fecha no puede ser futura.' : edad(form.nacimiento.value) < 15 ? 'Revisa la fecha de nacimiento.' : '') || mal;
+      mal = error('nombres', form.nombres.value.trim() ? '' : 'Escribe el nombre.') || mal;
+      mal = error('apPaterno', form.apPaterno.value.trim() ? '' : 'Escribe el apellido paterno.') || mal;
+      mal = error('nacimiento', !form.nacimiento.value ? 'Indica la fecha de nacimiento.' : form.nacimiento.value > hoy() ? 'La fecha no puede ser futura.' : edad(form.nacimiento.value, new Date(TV.ahora())) < 15 ? 'Revisa la fecha de nacimiento.' : '') || mal;
       mal = error('expediente', !exp ? 'Indica el expediente.' : duplicado ? 'Ya existe un operador con ese expediente.' : '') || mal;
       mal = error('carrera', form.carrera.value.trim() ? '' : 'Indica la carrera.') || mal;
       if (nuevo) mal = error('horarios', horarios.validar()) || mal;
       if (mal) return form.querySelector('.campo--invalido input')?.focus();
 
-      const datos = { nombre: form.nombre.value.trim().replace(/\s+/g, ' '), nacimiento: form.nacimiento.value, expediente: exp, carrera: form.carrera.value.trim(), huella };
-      if (nuevo) {
-        TV.db.get().operadores.push({ id: TV.db.uid(), ...datos, alta: hoy(), versionesHorario: [{ desde: hoy(), horarios: horarios.leer() }] });
-      } else {
-        Object.assign(op, datos);
-      }
-      TV.db.guardar();
+      const datos = {
+        nombres: form.nombres.value.trim().replace(/\s+/g, ' '),
+        ap_paterno: form.apPaterno.value.trim().replace(/\s+/g, ' '),
+        ap_materno: form.apMaterno.value.trim().replace(/\s+/g, ' '),
+        nacimiento: form.nacimiento.value,
+        expediente: exp,
+        carrera: form.carrera.value.trim(),
+      };
+      const ok = await mutar(async () => {
+        if (!nuevo) return api.put(`/api/admin/operadores/${op.id}`, datos);
+        const creado = await api.post('/api/admin/operadores', { ...datos, horarios: horarios.leer().map((h) => ({ dia_semana: h.dia, hora_inicio: h.inicio, hora_fin: h.fin })) });
+        if (huellaNueva) await api.post(`/api/admin/operadores/${creado.id}/huella`);
+      }, nuevo ? 'Operador registrado' : 'Cambios guardados');
+      if (!ok) return;
+      sensor.refrescarPersonas?.();
       m.cerrar();
-      ui.toast(nuevo ? 'Operador registrado' : 'Cambios guardados');
       ruta();
     });
-    form.nombre.focus();
+    form.nombres.focus();
   }
 
   function abrirHorarios(op) {
@@ -422,21 +520,18 @@
     const m = ui.modal(nodo, { ancho: '38rem', cerrable: false });
     nodo.querySelector('[data-agregar]').addEventListener('click', () => ed.agregar());
     nodo.querySelectorAll('[data-cancelar]').forEach((b) => b.addEventListener('click', () => m.cerrar()));
-    nodo.addEventListener('submit', (ev) => {
+    nodo.addEventListener('submit', async (ev) => {
       ev.preventDefault();
       const e = ed.validar();
       const caja = nodo.querySelector('[data-error]');
       caja.hidden = !e;
       caja.textContent = e;
       if (e) return;
-      const v = op.versionesHorario;
-      const nueva = { desde: hoy(), horarios: ed.leer() };
-      if (v[v.length - 1].desde === nueva.desde) v[v.length - 1] = nueva;
-      else v.push(nueva);
-      TV.db.guardar();
-      m.cerrar();
-      ui.toast('Horario actualizado');
-      ruta();
+      const cuerpo = { desde_fecha: hoy(), horarios: ed.leer().map((h) => ({ dia_semana: h.dia, hora_inicio: h.inicio, hora_fin: h.fin })) };
+      if (await mutar(() => api.put(`/api/admin/operadores/${op.id}/horario`, cuerpo), 'Horario actualizado')) {
+        m.cerrar();
+        ruta();
+      }
     });
   }
 
@@ -455,7 +550,7 @@
     ['anio', 'Este año'],
   ];
   function rangoPeriodo(id) {
-    const d = new Date();
+    const d = new Date(TV.ahora());
     const a = d.getFullYear();
     const m = d.getMonth();
     const f = (y, mes, dia) => ymd(new Date(y, mes, dia));
@@ -561,7 +656,7 @@
 
   /* ---------- Registro de asistencia (un día, todo el personal con turno) ---------- */
   function filasPase(fecha) {
-    const ahora = Date.now();
+    const ahora = TV.ahora();
     return TV.db
       .get()
       .operadores.flatMap((op) => TV.calc.resumen(op, fecha, fecha, ahora, { pendientes: true }).filas.map((f) => ({ op, f })))
@@ -658,11 +753,8 @@
     } else if (quitar) {
       const ok = await ui.confirmar({ titulo: 'Quitar justificación', mensaje: 'El turno volverá a contar como falta, retardo o tiempo faltante según corresponda.', aceptar: 'Quitar' });
       if (!ok) return;
-      const lista = TV.db.get().justificaciones;
-      lista.splice(lista.findIndex((j) => j.id === quitar.dataset.quitarJust), 1);
-      TV.db.guardar();
-      ui.toast('Justificación quitada');
-      repintar();
+      const j = TV.db.get().justificaciones.find((x) => x.id === quitar.dataset.quitarJust);
+      if (await mutar(() => api.post(`/api/admin/operadores/${j.operadorId}/quitar-justificacion`, { fecha: j.fecha, id_horario: j.idHorario }), 'Justificación quitada')) repintar();
     }
   }
 
@@ -719,7 +811,7 @@
     ['falta', 'Falta'],
   ];
   function abrirEdicion(op, fecha, inicio) {
-    const fila = TV.calc.resumen(op, fecha, fecha, Date.now(), { pendientes: true }).filas.find((f) => f.turno.inicio === inicio);
+    const fila = TV.calc.resumen(op, fecha, fecha, TV.ahora(), { pendientes: true }).filas.find((f) => f.turno.inicio === inicio);
     const ajustes = TV.db.get().ajustes;
     const previo = ajustes.find((x) => x.operadorId === op.id && x.fecha === fecha && x.turnoInicio === inicio);
     const actual = ['asistencia', 'retardo', 'falta'].includes(fila.estado) ? fila.estado : fila.estado === 'incompleto' ? 'retardo' : '';
@@ -745,7 +837,7 @@
       </div>`;
     const m = ui.modal(form, { ancho: '30rem', cerrable: false });
     form.querySelectorAll('[data-cancelar]').forEach((b) => b.addEventListener('click', () => m.cerrar(false)));
-    form.addEventListener('submit', (ev) => {
+    form.addEventListener('submit', async (ev) => {
       ev.preventDefault();
       const marcada = form.querySelector('input[name=estatus]:checked');
       const campo = form.querySelector('[data-campo="estatus"] .campo__error');
@@ -754,12 +846,13 @@
       if (!marcada) return;
       const nuevo = marcada.value;
       const motivo = form.motivo.value.trim();
-      if (previo) ajustes.splice(ajustes.indexOf(previo), 1);
-      if (nuevo !== 'auto') ajustes.push({ id: TV.db.uid(), operadorId: op.id, fecha, turnoInicio: inicio, estado: nuevo, motivo, ts: Date.now() });
-      TV.db.get().ediciones.push({ id: TV.db.uid(), operadorId: op.id, fecha, turnoInicio: inicio, antes: fila.estado, despues: nuevo, motivo, ts: Date.now() });
-      TV.db.guardar();
-      ui.toast(nuevo === 'auto' ? 'Estatus calculado restaurado' : `Estatus cambiado a ${ESTATUS_MANUAL.find(([v]) => v === nuevo)[1].toLowerCase()}`);
-      m.cerrar(true);
+      const base = `/api/admin/operadores/${op.id}`;
+      const exito = nuevo === 'auto' ? 'Estatus calculado restaurado' : `Estatus cambiado a ${ESTATUS_MANUAL.find(([v]) => v === nuevo)[1].toLowerCase()}`;
+      const ok = await mutar(
+        () => (nuevo === 'auto' ? api.post(`${base}/quitar-edicion`, { fecha, id_horario: fila.idHorario }) : api.post(`${base}/editar-estatus`, { fecha, id_horario: fila.idHorario, estado: nuevo, motivo })),
+        exito
+      );
+      if (ok) m.cerrar(true);
     });
     (form.querySelector('input[name=estatus]:checked') || form.querySelector('input[name=estatus]')).focus();
     return m.promesa;
@@ -785,7 +878,7 @@
       </div>`;
     const m = ui.modal(form, { ancho: '34rem', cerrable: false });
     form.querySelectorAll('[data-cancelar]').forEach((b) => b.addEventListener('click', () => m.cerrar(false)));
-    form.addEventListener('submit', (ev) => {
+    form.addEventListener('submit', async (ev) => {
       ev.preventDefault();
       const motivo = form.motivo.value.trim();
       const c = form.querySelector('[data-campo="motivo"]');
@@ -794,10 +887,7 @@
       e.hidden = !!motivo;
       e.textContent = motivo ? '' : 'Escribe el motivo de la justificación.';
       if (!motivo) return form.motivo.focus();
-      TV.db.get().justificaciones.push({ id: TV.db.uid(), operadorId: op.id, fecha, turnoInicio: inicio, concepto: CONCEPTO(fila), motivo, creadoTs: Date.now() });
-      TV.db.guardar();
-      ui.toast('Justificación guardada');
-      m.cerrar(true);
+      if (await mutar(() => api.post(`/api/admin/operadores/${op.id}/justificar`, { fecha, id_horario: fila.idHorario, motivo }), 'Justificación guardada')) m.cerrar(true);
     });
     form.motivo.focus();
     return m.promesa;
@@ -903,10 +993,168 @@
     pintar();
   }
 
+  /* =========================================================
+     ADMINISTRADORES
+     ========================================================= */
+  function formClave(titulo, campos, boton, ancho = '32rem') {
+    const form = document.createElement('form');
+    form.noValidate = true;
+    form.innerHTML = `
+      <div class="modal__cab"><h2>${titulo}</h2>
+        <button type="button" class="btn btn--texto btn--chico" data-cancelar aria-label="Cerrar">${ui.icono('x')}</button></div>
+      <div class="modal__cuerpo">${campos}<p class="campo__error" data-error role="alert" hidden></p></div>
+      <div class="modal__pie">
+        <button type="button" class="btn btn--secundario" data-cancelar>Cancelar</button>
+        <button type="submit" class="btn btn--primario">${boton}</button>
+      </div>`;
+    const m = ui.modal(form, { ancho, cerrable: false });
+    form.querySelectorAll('[data-cancelar]').forEach((b) => b.addEventListener('click', () => m.cerrar()));
+    const error = (t) => {
+      const e = form.querySelector('[data-error]');
+      e.hidden = !t;
+      e.textContent = t || '';
+      return !!t;
+    };
+    return { form, m, error };
+  }
+
+  async function vistaAdministradores(main) {
+    main.innerHTML =
+      cabecera('Administradores', 'Solo los administradores pueden entrar a esta parte del sistema. Aquí se agregan nuevos y se administra su acceso.', `<button class="btn btn--primario" id="ad-alta" type="button">${ui.icono('mas')} Alta de administrador</button>`) +
+      '<section class="tarjeta"><div class="tabla-envoltura" id="ad-tabla"><p class="vacio">Cargando…</p></div></section>' +
+      '<section class="regla">Cada administrador entra con su huella o con su usuario y contraseña. Una contraseña tiene al menos 8 caracteres; tras 5 intentos fallidos el acceso se bloquea 5 minutos. Todo cambio queda en la bitácora.</section>';
+    const pintar = async () => {
+      let lista;
+      try {
+        lista = await api.get('/api/admin/administradores');
+      } catch (e) {
+        return;
+      }
+      const activos = lista.filter((a) => a.activo).length;
+      main.querySelector('#ad-tabla').innerHTML = `<table class="tabla">
+        <thead><tr><th>Usuario</th><th>Nombre</th><th>Creado por</th><th>Huella</th><th>Estado</th><th><span class="solo-lectores">Acciones</span></th></tr></thead>
+        <tbody>${lista
+          .map(
+            (a) => `<tr>
+            <td class="nombre">${esc(a.usuario)}${a.id === YO.id ? ' <span class="insignia insignia--info">Tú</span>' : ''}</td>
+            <td>${esc(a.nombre)}</td><td>${esc(a.creado_por || 'Instalación')}</td>
+            <td>${a.huella ? '<span class="insignia insignia--ok">Registrada</span>' : '<span class="insignia insignia--warn">Pendiente</span>'}</td>
+            <td>${a.activo ? '<span class="insignia insignia--ok">Activo</span>' : '<span class="insignia insignia--neutra">Desactivado</span>'}</td>
+            <td><div class="acciones">${
+              a.activo
+                ? `<button class="btn btn--secundario btn--chico" data-huella="${a.id}" type="button">${ui.icono('huella')} Huella</button>
+                   <button class="btn btn--secundario btn--chico" data-clave="${a.id}" type="button">${ui.icono('candado')} Contraseña</button>
+                   ${activos > 1 && a.id !== YO.id ? `<button class="btn btn--texto btn--chico" data-desactivar="${a.id}" type="button">Desactivar</button>` : ''}`
+                : ''
+            }</div></td></tr>`
+          )
+          .join('')}</tbody></table>`;
+      const por = (id) => lista.find((a) => a.id === Number(id));
+      main.querySelectorAll('[data-huella]').forEach((b) =>
+        b.addEventListener('click', async () => {
+          if (await enrolarHuella()) {
+            try {
+              await api.post(`/api/admin/administradores/${b.dataset.huella}/huella`);
+              ui.toast('Huella registrada');
+              sensor.refrescarPersonas?.();
+              pintar();
+            } catch (e) {
+              ui.toast(e.message, 'error');
+            }
+          }
+        })
+      );
+      main.querySelectorAll('[data-clave]').forEach((b) => b.addEventListener('click', () => cambiarClave(por(b.dataset.clave), pintar)));
+      main.querySelectorAll('[data-desactivar]').forEach((b) =>
+        b.addEventListener('click', async () => {
+          const a = por(b.dataset.desactivar);
+          const ok = await ui.confirmar({ titulo: 'Desactivar administrador', mensaje: `${esc(a.nombre)} dejará de poder entrar a la administración y se cerrarán sus sesiones.`, aceptar: 'Desactivar' });
+          if (!ok) return;
+          try {
+            await api.post(`/api/admin/administradores/${a.id}/desactivar`);
+            ui.toast('Administrador desactivado');
+            pintar();
+          } catch (e) {
+            ui.toast(e.message, 'error');
+          }
+        })
+      );
+    };
+    main.querySelector('#ad-alta').addEventListener('click', () => altaAdministrador(pintar));
+    pintar();
+  }
+
+  function altaAdministrador(repintar) {
+    const { form, m, error } = formClave(
+      'Alta de administrador',
+      `<div class="rejilla">
+         <label class="campo"><span class="campo__etiqueta">Usuario <span class="req">*</span></span><input type="text" name="usuario" autocomplete="off" maxlength="40" /></label>
+         <label class="campo"><span class="campo__etiqueta">Nombre completo <span class="req">*</span></span><input type="text" name="nombre" autocomplete="off" maxlength="120" /></label>
+       </div>
+       <div class="rejilla">
+         <label class="campo"><span class="campo__etiqueta">Contraseña <span class="req">*</span></span><input type="password" name="clave" autocomplete="new-password" /></label>
+         <label class="campo"><span class="campo__etiqueta">Repite la contraseña <span class="req">*</span></span><input type="password" name="clave2" autocomplete="new-password" /></label>
+       </div>
+       <p class="regla">El nuevo administrador podrá hacer todo lo de esta sección, incluido dar de alta a otros. Después podrás registrar su huella.</p>`,
+      'Crear administrador',
+      '40rem'
+    );
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      if (!form.usuario.value.trim() || !form.nombre.value.trim()) return error('Escribe el usuario y el nombre.');
+      if (form.clave.value !== form.clave2.value) return error('Las contraseñas no coinciden.');
+      try {
+        await api.post('/api/admin/administradores', { usuario: form.usuario.value.trim(), nombre: form.nombre.value.trim(), clave: form.clave.value });
+      } catch (e) {
+        return error(e.message);
+      }
+      m.cerrar();
+      ui.toast('Administrador creado');
+      repintar();
+    });
+    form.usuario.focus();
+  }
+
+  function cambiarClave(adm, repintar) {
+    const propia = adm.id === YO.id;
+    const { form, m, error } = formClave(
+      'Cambiar contraseña',
+      `<p><strong>${esc(adm.nombre)}</strong> · ${esc(adm.usuario)}</p>
+       <label class="campo"><span class="campo__etiqueta">Contraseña nueva <span class="req">*</span></span><input type="password" name="clave" autocomplete="new-password" /></label>
+       <label class="campo"><span class="campo__etiqueta">Repite la contraseña <span class="req">*</span></span><input type="password" name="clave2" autocomplete="new-password" /></label>
+       <p class="regla">Se cerrarán las sesiones abiertas de esta cuenta${propia ? ', incluida la tuya: tendrás que entrar de nuevo' : ''}.</p>`,
+      'Cambiar contraseña'
+    );
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      if (form.clave.value !== form.clave2.value) return error('Las contraseñas no coinciden.');
+      try {
+        await api.post(`/api/admin/administradores/${adm.id}/clave`, { clave: form.clave.value }, { sinAvisoSesion: true });
+      } catch (e) {
+        return error(e.message);
+      }
+      m.cerrar();
+      ui.toast('Contraseña actualizada');
+      if (propia) {
+        YO = null;
+        location.hash = '';
+        return vistaAcceso();
+      }
+      repintar();
+    });
+    form.clave.focus();
+  }
+
   /* ---------- Arranque ---------- */
   sensor.montarSimulador('admin');
-  if (autenticado()) {
-    sensor.visible(false);
-    armarShell();
-  } else vistaAcceso();
+  (async () => {
+    try {
+      YO = await api.get('/api/auth/yo', { sinAvisoSesion: true });
+      await TV.cargarDatos();
+      armarShell();
+    } catch (e) {
+      YO = null;
+      vistaAcceso();
+    }
+  })();
 })(window.TV);

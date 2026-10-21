@@ -127,7 +127,7 @@
       <h1 class="hoja__titulo">${esc(titulo)}</h1>
       <p class="hoja__meta">${meta}</p>
       <div class="hoja__cuerpo">${html}</div>
-      <footer class="hoja__pie">Emitido el ${TV.util.fmtFechaHora(Date.now())}</footer>`;
+      <footer class="hoja__pie">Emitido el ${TV.util.fmtFechaHora(TV.ahora())}</footer>`;
     const limpiar = () => {
       hoja.innerHTML = '';
       window.removeEventListener('afterprint', limpiar);
