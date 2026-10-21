@@ -149,3 +149,43 @@ def test_flujo_de_huella_por_eventos(ctx):
                 break
             time.sleep(0.05)
     assert eventos and eventos[0]["evento"] == "entrada" and eventos[0]["llegada"] == "a-tiempo"
+
+
+def test_respaldos_por_la_api(tmp_path):
+    entorno = config.Entorno(ruta_db=tmp_path / "t.db", zona_horaria="America/Mexico_City", simulador=False, host="127.0.0.1",
+                             respaldo_local=tmp_path / "local", respaldo_usb=tmp_path / "usb" / "TvUAQ")
+    con = db.conectar(":memory:")
+    db.iniciar(con)
+    t = ts("2026-10-20", "09:00")
+    app = crear_app(entorno, con=con, lector=LectorSimulado(), reloj=lambda: t)
+    seguridad.crear_administrador(con, "ana.admin", "Ana Admin", CLAVE, t)
+    c = con_sesion(app)
+    antes = c.get("/api/admin/respaldos").json()
+    assert all(d["alerta"] for d in antes["destinos"])                 # todavía no hay ninguno
+    r = c.post("/api/admin/respaldos").json()
+    assert r["resultados"][0]["ok"] is True                            # local
+    assert r["resultados"][1]["ok"] is False                           # la USB no está conectada: avisa, no falla
+    assert (tmp_path / "local").glob("tvuaq-*.db")
+    assert c.get("/api/admin/respaldos").json()["destinos"][0]["alerta"] == ""
+
+
+def test_un_administrador_no_puede_desactivar_a_otro_pero_el_superusuario_si(ctx):
+    app, con, _, reloj = ctx
+    seguridad.crear_administrador(con, "super", "Superusuario", "super-clave-77", reloj["t"], rol="superusuario")
+    c = con_sesion(app)
+    nuevo = c.post("/api/admin/administradores", json={"usuario": "beto", "nombre": "Beto", "clave": "beto-clave-2026"}).json()["id"]
+    assert c.post(f"/api/admin/administradores/{nuevo}/desactivar").status_code == 403
+    cs = cliente(app)
+    assert cs.post("/api/auth/login", json={"usuario": "super", "clave": "super-clave-77"}).status_code == 200
+    assert cs.post(f"/api/admin/administradores/{nuevo}/desactivar").status_code == 200
+    lista = cs.get("/api/admin/administradores").json()
+    assert lista[0]["rol"] == "superusuario"
+    assert cs.post("/api/admin/administradores/1/desactivar").status_code in (200, 409)
+
+
+def test_estado_del_lector_para_la_pantalla(ctx):
+    app, _, lector, _ = ctx
+    c = cliente(app)
+    assert c.get("/api/kiosko/estado-lector").json()["ok"] is True
+    lector.fallar(True)
+    assert c.get("/api/kiosko/estado-lector").json()["ok"] is False

@@ -12,6 +12,8 @@ class Entorno:
     zona_horaria: str
     simulador: bool  # True = lector simulado y endpoint de pruebas; en producción debe ser False
     host: str
+    respaldo_local: Path | None = None   # carpeta de respaldos en la propia PC (en un disco distinto al de la base, si se puede)
+    respaldo_usb: Path | None = None     # carpeta dentro de la memoria USB; None = no hay USB configurada
 
 
 def cargar() -> Entorno:
@@ -20,4 +22,6 @@ def cargar() -> Entorno:
         zona_horaria=os.environ.get("TVUAQ_ZONA", "America/Mexico_City"),
         simulador=os.environ.get("TVUAQ_SIMULADOR", "0") == "1",
         host="127.0.0.1",  # nunca otra cosa: la app solo se atiende desde la propia PC
+        respaldo_local=Path(os.environ.get("TVUAQ_RESPALDO_LOCAL", RAIZ.parent / "backups")),
+        respaldo_usb=Path(os.environ["TVUAQ_RESPALDO_USB"]) if os.environ.get("TVUAQ_RESPALDO_USB") else None,
     )

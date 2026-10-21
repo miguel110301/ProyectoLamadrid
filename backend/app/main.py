@@ -20,7 +20,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import config, db, operadores, reglas, seguridad, vista
+from . import config, db, operadores, reglas, respaldos, seguridad, vista
 from .kiosko import Kiosko
 from .lector import Lector, LectorNoDisponible, LectorSimulado
 from .seguridad import ErrorNegocio
@@ -93,6 +93,7 @@ class AdminNuevo(BaseModel):
     usuario: str
     nombre: str
     clave: str
+    id_operador: int | None = None   # si también es operador: su huella registra su propia asistencia
 
 
 class ClaveNueva(BaseModel):
@@ -115,6 +116,10 @@ class RelojDemo(BaseModel):
     ahora: str | None = None   # 'YYYY-MM-DDTHH:MM' hora local; None = volver a la hora real
 
 
+class FallaLector(BaseModel):
+    falla: bool
+
+
 class DedoSimulado(BaseModel):
     tipo: str | None = None   # 'operador' | 'administrador' | None (no reconocida)
     id: int | None = None
@@ -133,7 +138,8 @@ def crear_app(entorno: config.Entorno | None = None, con=None, lector: Lector | 
     async def ciclo(app: FastAPI):
         loop = asyncio.get_running_loop()
         app.state.lector.suscribir(lambda persona: loop.call_soon_threadsafe(manejar_lectura, persona))
-        tareas = [asyncio.create_task(_vigilar_reloj(app)), asyncio.create_task(_mantenimiento(app))]
+        tareas = [asyncio.create_task(_vigilar_reloj(app)), asyncio.create_task(_mantenimiento(app)),
+                  asyncio.create_task(_respaldo_automatico(app, entorno))]
         yield
         for t in tareas:
             t.cancel()
@@ -224,7 +230,8 @@ def crear_app(entorno: config.Entorno | None = None, con=None, lector: Lector | 
 
     @auth.get("/yo")
     async def yo(adm=Depends(requiere_admin)):
-        return {"id": adm["id"], "usuario": adm["usuario"], "nombre": adm["nombre"]}
+        return {"id": adm["id"], "usuario": adm["usuario"], "nombre": adm["nombre"], "rol": adm["rol"],
+                "es_operador": adm["id_operador"] is not None}
 
     # ---------- kiosko (operadores) ----------
     kiosko = APIRouter(prefix="/api/kiosko")
@@ -252,6 +259,14 @@ def crear_app(entorno: config.Entorno | None = None, con=None, lector: Lector | 
     async def hora():
         """Hora del servidor: la pantalla se alinea con ella (en demostración puede estar adelantada o atrasada)."""
         return {"ts": app.state.reloj()}
+
+    @kiosko.get("/estado-lector")
+    async def estado_lector():
+        """Si el lector deja de responder (p. ej. tras una actualización de driver) la pantalla lo avisa."""
+        try:
+            return app.state.lector.estado()
+        except AttributeError:
+            return {"ok": True, "detalle": "Sin información del lector"}
 
     @kiosko.get("/tipos-incidencia")
     async def tipos():
@@ -404,13 +419,16 @@ def crear_app(entorno: config.Entorno | None = None, con=None, lector: Lector | 
     @admin.get("/administradores")
     async def listar_admins():
         return [dict(f) for f in app.state.con.execute(
-            """SELECT a.id, a.usuario, a.nombre, a.activo, a.creado_ts, c.nombre AS creado_por,
-                      EXISTS (SELECT 1 FROM huella h WHERE h.id_administrador = a.id) AS huella
-               FROM administrador a LEFT JOIN administrador c ON c.id = a.creado_por ORDER BY a.id""")]
+            """SELECT a.id, a.usuario, a.nombre, a.activo, a.creado_ts, a.rol, c.nombre AS creado_por,
+                      EXISTS (SELECT 1 FROM huella h WHERE h.id_administrador = a.id) AS huella,
+                      TRIM(o.nombres || ' ' || o.ap_paterno || ' ' || o.ap_materno) AS opera_como
+               FROM administrador a LEFT JOIN administrador c ON c.id = a.creado_por
+               LEFT JOIN operador o ON o.id = a.id_operador ORDER BY a.rol DESC, a.id""")]
 
     @admin.post("/administradores")
     async def nuevo_admin(datos: AdminNuevo, adm=Depends(requiere_admin)):
-        i = seguridad.crear_administrador(app.state.con, datos.usuario, datos.nombre, datos.clave, app.state.reloj(), creado_por=adm["id"])
+        i = seguridad.crear_administrador(app.state.con, datos.usuario, datos.nombre, datos.clave, app.state.reloj(),
+                                          creado_por=adm["id"], id_operador=datos.id_operador)
         return {"id": i}
 
     @admin.post("/administradores/{id_adm}/desactivar")
@@ -422,6 +440,15 @@ def crear_app(entorno: config.Entorno | None = None, con=None, lector: Lector | 
     async def clave_admin(id_adm: int, datos: ClaveNueva, adm=Depends(requiere_admin)):
         seguridad.cambiar_clave(app.state.con, id_adm, datos.clave, app.state.reloj(), adm["id"])
         return {"ok": True}
+
+    @admin.get("/respaldos")
+    async def estado_respaldos():
+        return respaldos.estado(app.state.con, entorno, app.state.reloj())
+
+    @admin.post("/respaldos")
+    async def respaldar_ahora(adm=Depends(requiere_admin)):
+        res = respaldos.respaldar_todo(app.state.con, entorno, app.state.reloj(), zona, actor=("administrador", adm["id"]))
+        return {"resultados": res, **respaldos.estado(app.state.con, entorno, app.state.reloj())}
 
     @admin.get("/bitacora")
     async def bitacora(limite: int = 200):
@@ -453,6 +480,11 @@ def crear_app(entorno: config.Entorno | None = None, con=None, lector: Lector | 
             app.state.kiosko.olvidar_lecturas()
             seguridad.bitacora(app.state.con, app.state.reloj(), "sistema", None, "reloj-demo", detalle=f"{desfase['ms'] // 1000} s")
             return {"ts": app.state.reloj()}
+
+        @app.post("/api/dev/lector")
+        async def falla_lector(datos: FallaLector):
+            app.state.lector.fallar(datos.falla)
+            return {"ok": True}
 
         @app.post("/api/dev/purgar")
         async def purgar_ahora():
@@ -496,6 +528,18 @@ async def _mantenimiento(app: FastAPI) -> None:
         except Exception as e:  # nunca debe tumbar el servidor
             seguridad.bitacora(app.state.con, app.state.reloj(), "sistema", None, "error-mantenimiento", detalle=type(e).__name__)
         await asyncio.sleep(3600)
+
+
+async def _respaldo_automatico(app: FastAPI, entorno, cada_s: float = 600) -> None:
+    """Revisa cada 10 min si toca el respaldo diario (madrugada, o al arrancar si ya pasó más de un día)."""
+    while True:
+        try:
+            ahora = app.state.reloj_real()   # los respaldos siguen la hora real, no la de demostración
+            if respaldos.debe_respaldar(app.state.con, ahora, app.state.zona):
+                respaldos.respaldar_todo(app.state.con, entorno, ahora, app.state.zona)
+        except Exception as e:  # nunca debe tumbar el servidor
+            seguridad.bitacora(app.state.con, app.state.reloj_real(), "sistema", None, "error-respaldo", detalle=type(e).__name__)
+        await asyncio.sleep(cada_s)
 
 
 def app_produccion() -> FastAPI:

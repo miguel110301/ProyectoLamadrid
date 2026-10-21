@@ -16,7 +16,12 @@ class Lector(Protocol):
     def suscribir(self, callback: Callable[[Persona], None]) -> None: ...
 
     def enrolar(self) -> bytes:
-        """Captura una huella nueva y devuelve su plantilla. Sin SDK no hay lector real: lanza LectorNoDisponible."""
+        """Captura una huella nueva y devuelve su plantilla. Sin lector disponible lanza LectorNoDisponible."""
+        ...
+
+    def estado(self) -> dict:
+        """{'ok': bool, 'detalle': str}. Se consulta seguido: si el lector deja de responder (por ejemplo tras una
+        actualización de driver) la pantalla lo avisa en vez de quedarse esperando en silencio."""
         ...
 
 
@@ -29,6 +34,14 @@ class LectorSimulado:
 
     def __init__(self) -> None:
         self._callbacks: list[Callable[[Persona], None]] = []
+        self._falla = False
+
+    def estado(self) -> dict:
+        return {"ok": False, "detalle": "El lector no responde"} if self._falla else {"ok": True, "detalle": "Lector listo"}
+
+    def fallar(self, falla: bool) -> None:
+        """Solo demostración: simula que el lector deja de responder."""
+        self._falla = falla
 
     def suscribir(self, callback: Callable[[Persona], None]) -> None:
         self._callbacks.append(callback)
