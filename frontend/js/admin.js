@@ -168,6 +168,7 @@
     individual: { titulo: 'Reporte individual', icono: 'usuario', vista: vistaIndividual },
     incidencias: { titulo: 'Incidencias', icono: 'alerta', vista: vistaIncidencias },
     administradores: { titulo: 'Administradores', icono: 'candado', vista: vistaAdministradores },
+    respaldos: { titulo: 'Respaldos', icono: 'candado', vista: vistaRespaldos },
   };
 
   function armarShell() {
@@ -183,7 +184,7 @@
           </nav>
           <div class="cab-sitio__acciones">
             <a class="btn btn--secundario btn--chico" href="index.html">Ir al registro</a>
-            <span class="regla" title="Sesión de administrador">${esc(YO.nombre)}</span>
+            <span class="regla" title="Sesión actual">${esc(YO.nombre)}${YO.rol === 'superusuario' ? ' · <strong>Superusuario</strong>' : ''}</span>
             <button class="btn btn--primario btn--chico" id="b-salir" type="button">Cerrar sesión</button>
           </div>
         </header>
@@ -1019,10 +1020,13 @@
   }
 
   async function vistaAdministradores(main) {
+    const esSuper = YO.rol === 'superusuario';
     main.innerHTML =
       cabecera('Administradores', 'Solo los administradores pueden entrar a esta parte del sistema. Aquí se agregan nuevos y se administra su acceso.', `<button class="btn btn--primario" id="ad-alta" type="button">${ui.icono('mas')} Alta de administrador</button>`) +
       '<section class="tarjeta"><div class="tabla-envoltura" id="ad-tabla"><p class="vacio">Cargando…</p></div></section>' +
-      '<section class="regla">Cada administrador entra con su huella o con su usuario y contraseña. Una contraseña tiene al menos 8 caracteres; tras 5 intentos fallidos el acceso se bloquea 5 minutos. Todo cambio queda en la bitácora.</section>';
+      '<section class="regla"><strong>Superusuario:</strong> cuenta de respaldo del equipo desarrollador. Solo ella puede desactivar administradores o restablecer contraseñas ajenas, y nadie puede desactivarla. ' +
+      '<strong>Administrador que también opera:</strong> su huella registra su propia entrada, salida e incidencias, pero no puede justificarse, editarse ni darse de baja a sí mismo: lo hace otro administrador. ' +
+      'Tras 5 intentos fallidos el acceso se bloquea 5 minutos. Todo cambio queda en la bitácora.</section>';
     const pintar = async () => {
       let lista;
       try {
@@ -1030,24 +1034,28 @@
       } catch (e) {
         return;
       }
-      const activos = lista.filter((a) => a.activo).length;
+      const rol = (a) => (a.rol === 'superusuario' ? '<span class="insignia insignia--info">Superusuario</span>' : 'Administrador');
       main.querySelector('#ad-tabla').innerHTML = `<table class="tabla">
-        <thead><tr><th>Usuario</th><th>Nombre</th><th>Creado por</th><th>Huella</th><th>Estado</th><th><span class="solo-lectores">Acciones</span></th></tr></thead>
+        <thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>También opera</th><th>Huella</th><th>Estado</th><th><span class="solo-lectores">Acciones</span></th></tr></thead>
         <tbody>${lista
-          .map(
-            (a) => `<tr>
-            <td class="nombre">${esc(a.usuario)}${a.id === YO.id ? ' <span class="insignia insignia--info">Tú</span>' : ''}</td>
-            <td>${esc(a.nombre)}</td><td>${esc(a.creado_por || 'Instalación')}</td>
+          .map((a) => {
+            const propia = a.id === YO.id;
+            const puedeClave = a.activo && (propia || (esSuper && a.rol !== 'superusuario'));
+            const puedeDesactivar = a.activo && esSuper && a.rol !== 'superusuario';
+            return `<tr>
+            <td class="nombre">${esc(a.usuario)}${propia ? ' <span class="insignia insignia--info">Tú</span>' : ''}</td>
+            <td>${esc(a.nombre)}<div class="regla">${a.creado_por ? 'Creado por ' + esc(a.creado_por) : 'Instalación'}</div></td><td>${rol(a)}</td>
+            <td>${a.opera_como ? esc(a.opera_como) : '<span class="vacio">—</span>'}</td>
             <td>${a.huella ? '<span class="insignia insignia--ok">Registrada</span>' : '<span class="insignia insignia--warn">Pendiente</span>'}</td>
             <td>${a.activo ? '<span class="insignia insignia--ok">Activo</span>' : '<span class="insignia insignia--neutra">Desactivado</span>'}</td>
             <td><div class="acciones">${
               a.activo
                 ? `<button class="btn btn--secundario btn--chico" data-huella="${a.id}" type="button">${ui.icono('huella')} Huella</button>
-                   <button class="btn btn--secundario btn--chico" data-clave="${a.id}" type="button">${ui.icono('candado')} Contraseña</button>
-                   ${activos > 1 && a.id !== YO.id ? `<button class="btn btn--texto btn--chico" data-desactivar="${a.id}" type="button">Desactivar</button>` : ''}`
+                   ${puedeClave ? `<button class="btn btn--secundario btn--chico" data-clave="${a.id}" type="button">${ui.icono('candado')} Contraseña</button>` : ''}
+                   ${puedeDesactivar ? `<button class="btn btn--texto btn--chico" data-desactivar="${a.id}" type="button">Desactivar</button>` : ''}`
                 : ''
-            }</div></td></tr>`
-          )
+            }</div></td></tr>`;
+          })
           .join('')}</tbody></table>`;
       const por = (id) => lista.find((a) => a.id === Number(id));
       main.querySelectorAll('[data-huella]').forEach((b) =>
@@ -1079,12 +1087,13 @@
           }
         })
       );
+      main.dataset.lista = JSON.stringify(lista.map((a) => a.opera_como).filter(Boolean));
     };
-    main.querySelector('#ad-alta').addEventListener('click', () => altaAdministrador(pintar));
+    main.querySelector('#ad-alta').addEventListener('click', () => altaAdministrador(pintar, JSON.parse(main.dataset.lista || '[]')));
     pintar();
   }
 
-  function altaAdministrador(repintar) {
+  function altaAdministrador(repintar, yaLigados = []) {
     const { form, m, error } = formClave(
       'Alta de administrador',
       `<div class="rejilla">
@@ -1095,7 +1104,10 @@
          <label class="campo"><span class="campo__etiqueta">Contraseña <span class="req">*</span></span><input type="password" name="clave" autocomplete="new-password" /></label>
          <label class="campo"><span class="campo__etiqueta">Repite la contraseña <span class="req">*</span></span><input type="password" name="clave2" autocomplete="new-password" /></label>
        </div>
-       <p class="regla">El nuevo administrador podrá hacer todo lo de esta sección, incluido dar de alta a otros. Después podrás registrar su huella.</p>`,
+       <label class="campo"><span class="campo__etiqueta">También es operador (opcional)</span>
+         <select name="operador"><option value="">No, solo administra</option>${TV.db.get().operadores.filter((o) => o.activo && !yaLigados.includes(o.nombre)).map((o) => `<option value="${o.id}">${esc(o.nombre)}</option>`).join('')}</select>
+         <span class="campo__ayuda">Si lo eliges, su huella también registrará su propia entrada, salida e incidencias.</span></label>
+       <p class="regla">El nuevo administrador podrá hacer todo lo de esta sección, salvo desactivar cuentas (solo el superusuario). Después podrás registrar su huella.</p>`,
       'Crear administrador',
       '40rem'
     );
@@ -1104,7 +1116,7 @@
       if (!form.usuario.value.trim() || !form.nombre.value.trim()) return error('Escribe el usuario y el nombre.');
       if (form.clave.value !== form.clave2.value) return error('Las contraseñas no coinciden.');
       try {
-        await api.post('/api/admin/administradores', { usuario: form.usuario.value.trim(), nombre: form.nombre.value.trim(), clave: form.clave.value });
+        await api.post('/api/admin/administradores', { usuario: form.usuario.value.trim(), nombre: form.nombre.value.trim(), clave: form.clave.value, id_operador: form.operador.value ? Number(form.operador.value) : null });
       } catch (e) {
         return error(e.message);
       }
@@ -1143,6 +1155,61 @@
       repintar();
     });
     form.clave.focus();
+  }
+
+  /* =========================================================
+     RESPALDOS
+     ========================================================= */
+  const NOMBRE_DESTINO = { local: 'En esta PC', usb: 'Memoria USB' };
+
+  async function vistaRespaldos(main) {
+    main.innerHTML =
+      cabecera('Respaldos', 'Copias de la base de datos, verificadas una por una. La USB protege contra una falla del disco de la PC.', `<button class="btn btn--primario" id="rp-ahora" type="button">Respaldar ahora</button>`) +
+      '<div id="rp-estado"></div>' +
+      '<section class="regla">Se hace un respaldo automático cada madrugada (y al encender la PC si se pasó un día). Se conservan 7 diarios y 4 semanales: unas 4 semanas, para que los datos de una persona dada de baja no se queden guardados por meses. ' +
+      'Si la USB no está conectada el sistema sigue funcionando y lo avisa aquí. Conviene proteger la USB con BitLocker To Go, porque contiene datos personales. ' +
+      'Restaurar es una tarea de consola en la PC (<code>python -m app.restaurar</code>), no de esta pantalla.</section>';
+    const pintar = async () => {
+      let e;
+      try {
+        e = await api.get('/api/admin/respaldos');
+      } catch (x) {
+        return;
+      }
+      const kb = (b) => (b ? (b / 1048576 >= 1 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB') : '–');
+      main.querySelector('#rp-estado').innerHTML =
+        '<section class="tarjeta"><div class="tarjeta__cuerpo"><div class="resumen">' +
+        e.destinos
+          .map((d) => {
+            const sub = d.ultimo_ts ? `${TV.util.fmtFechaHora(d.ultimo_ts)} · ${kb(d.bytes)}` : 'Sin respaldos';
+            const cls = d.alerta ? (d.configurado ? 'dato--err' : 'dato--warn') : '';
+            return `<div class="dato ${cls}"><div class="dato__valor" style="font-size:1.4rem">${NOMBRE_DESTINO[d.destino]}</div><div class="dato__etiqueta">${sub}</div>
+              <div class="dato__etiqueta">${d.alerta ? '<strong>' + esc(d.alerta) + '</strong>' : '<span class="insignia insignia--ok">Al corriente</span>'}${d.configurado && !d.disponible ? ' · <strong>No conectada</strong>' : ''}</div></div>`;
+          })
+          .join('') +
+        '</div></div></section>' +
+        '<section class="tarjeta"><div class="tabla-envoltura"><table class="tabla"><thead><tr><th>Fecha</th><th>Destino</th><th>Archivo</th><th class="num">Tamaño</th><th>Resultado</th></tr></thead><tbody>' +
+        (e.historial.length
+          ? e.historial
+              .map((h) => `<tr><td>${TV.util.fmtFechaHora(h.ts)}</td><td>${NOMBRE_DESTINO[h.destino]}</td><td>${esc(h.archivo || '–')}</td><td class="num">${kb(h.bytes)}</td>
+                <td>${h.ok ? '<span class="insignia insignia--ok">Verificado</span>' : `<span class="insignia insignia--warn">${esc(h.detalle)}</span>`}</td></tr>`)
+              .join('')
+          : '<tr><td colspan="5" class="vacio">Todavía no hay respaldos.</td></tr>') +
+        '</tbody></table></div></section>';
+    };
+    main.querySelector('#rp-ahora').addEventListener('click', async (ev) => {
+      ev.target.disabled = true;
+      try {
+        const r = await api.post('/api/admin/respaldos');
+        const ok = r.resultados.filter((x) => x.ok).length;
+        ui.toast(ok === r.resultados.filter((x) => x.configurado).length ? 'Respaldo hecho y verificado' : 'Respaldo parcial: revisa la USB', ok ? 'exito' : 'error');
+      } catch (e) {
+        ui.toast(e.message, 'error');
+      }
+      ev.target.disabled = false;
+      pintar();
+    });
+    pintar();
   }
 
   /* ---------- Arranque ---------- */

@@ -118,6 +118,7 @@
             <button type="button" class="btn btn--texto btn--chico" data-sumar="1440">+1 día</button>
             <button type="button" class="btn btn--texto btn--chico" data-sumar="44640">+31 días</button>
           </div>
+          <label class="opciones"><input type="checkbox" data-falla /> Simular que el lector falla</label>
           ${contexto === 'admin' ? '<button type="button" class="btn btn--secundario btn--chico" data-purgar>Ejecutar borrado de bajas vencidas</button>' : ''}
         </div>`;
       const quien = dock.querySelector('[data-quien]');
@@ -160,6 +161,7 @@
       dock.querySelector('[data-aplicar]').addEventListener('click', () => campoFecha.value && ponerHora(campoFecha.value));
       dock.querySelector('[data-real]').addEventListener('click', () => ponerHora(null));
       dock.querySelectorAll('[data-sumar]').forEach((b) => b.addEventListener('click', () => ponerHora(aLocal(TV.ahora() + Number(b.dataset.sumar) * 60000))));
+      dock.querySelector('[data-falla]').addEventListener('change', (e) => TV.api.post('/api/dev/lector', { falla: e.target.checked }));
       dock.querySelector('[data-purgar]')?.addEventListener('click', async () => {
         const r = await TV.api.post('/api/dev/purgar');
         TV.ui.toast(r.purgados.length ? `Borrado definitivo de ${r.purgados.length} operador(es)` : 'Ninguna baja ha cumplido los 30 días');

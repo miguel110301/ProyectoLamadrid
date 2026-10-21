@@ -40,14 +40,36 @@
   window.addEventListener('tv:hora', pintarEnTurno);
 
   /* ---------- Estado del sensor y de la conexión con el sistema ---------- */
+  let sinConexion = false;
+  let lectorFalla = false;
   $('sensor-ico').innerHTML = ui.icono('huella');
   const normal = () => {
+    if (lectorFalla && !sinConexion) {
+      $('sensor-card').dataset.estado = 'error';
+      $('sensor-titulo').textContent = 'El lector de huellas no responde';
+      $('sensor-texto').textContent = 'Avisa al administrador. Mientras tanto, anota tu entrada o salida por escrito.';
+      return;
+    }
     $('sensor-card').dataset.estado = '';
     $('sensor-titulo').textContent = 'Coloca tu dedo en el sensor';
     $('sensor-texto').textContent = 'El sistema detecta solo si es tu entrada o tu salida.';
   };
   normal();
+  // El lector se vigila seguido: si deja de responder (p. ej. tras una actualización de su driver) se avisa en pantalla
+  const revisarLector = () =>
+    api
+      .get('/api/kiosko/estado-lector')
+      .then((r) => {
+        if (lectorFalla !== !r.ok) {
+          lectorFalla = !r.ok;
+          normal();
+        }
+      })
+      .catch(() => {});
+  setInterval(revisarLector, 15000);
+  revisarLector();
   sensor.alCambiarConexion((estado) => {
+    sinConexion = estado === 'desconectado';
     if (estado === 'desconectado') {
       $('sensor-card').dataset.estado = 'error';
       $('sensor-titulo').textContent = 'Sin conexión con el sistema';
