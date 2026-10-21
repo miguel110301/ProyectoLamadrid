@@ -9,7 +9,9 @@ Duración sugerida: 12–15 min. Todo corre en tu Mac con datos **ficticios**; n
 ```
 
 - Abre `http://localhost:8765/` (pantalla operativa) y, en otra pestaña, `http://localhost:8765/admin.html`.
-- Administrador de la demo: **demo** / **demo-tvuaq-26**.
+- Administrador de la demo: **demo** / **demo-tvuaq-26**. Superusuario: **super** / **super-tvuaq-26**.
+- La administradora **Ana Sofía** (usuario `coordinacion`) también es operadora: su huella registra su propia asistencia.
+- Respaldos: la «USB» de la demo es `/Volumes/TVUAQ-USB/respaldos`. Si no tienes una memoria con ese nombre, verás el aviso de «USB desconectada» (útil para mostrarlo); si quieres mostrarla conectada, renombra una USB a `TVUAQ-USB`.
 - Usa **Chrome o Safari** y deja la Mac en hora de México. La demo se probó en Chrome; **prueba Safari antes** si presentarás con él.
 - Si algo se atora: `Ctrl+C` y vuelve a correr `./scripts/demo.sh reiniciar`.
 
@@ -19,6 +21,7 @@ Solo existe con el simulador encendido (en la PC real no aparece). Permite:
 - **Poner dedo**: simula la huella de alguien (en la PC será el lector real).
 - **Hora del sistema**: mueve el reloj para enseñar a tiempo / retardo / falta sin esperar. **Hora real** lo regresa.
 - **+31 días** y **Ejecutar borrado de bajas vencidas**: enseña el borrado a los 30 días.
+- **Simular que el lector falla**: enseña el aviso en la pantalla operativa cuando el lector no responde.
 
 Turnos de la demo (para elegir a quién usar según el día en que presentes):
 
@@ -48,20 +51,22 @@ Si presentas en fin de semana, pon la hora en el lunes siguiente.
 2. **Operadores**: alta de uno nuevo (nombre en 3 campos, huella, horario). 
 3. **Bajas** (lo nuevo): *Dar de baja* → explica el aviso: baja inmediata, 30 días por si fue un error, luego se borra **todo**. Marca «Mostrar operadores dados de baja» → cuenta regresiva. *Reingresar* para mostrar que se revierte.
 4. **Borrado a los 30 días**: en el panel, *+31 días* → *Ejecutar borrado de bajas vencidas* → el operador desaparece (en la bitácora solo queda «purga-operador», sin datos personales).
-5. **Administradores**: alta de otro administrador (prueba una contraseña corta: la rechaza). Menciona: bloqueo tras 5 intentos fallidos, sesión que caduca a los 30 min, bitácora.
-6. **Reportes**: Registro de asistencia (pase de lista del día, lo que acabas de registrar en la Parte 1) → Reporte individual → *Justificar* una falta con motivo → *Editar* un estatus → Incidencias → *Generar PDF*.
+5. **Administradores y superusuario**: alta de otro administrador (prueba una contraseña corta: la rechaza; puedes marcar «también es operador»). Muestra que, con la cuenta `demo`, **no** aparece «Desactivar»; entra con `super` y sí aparece (y nunca sobre sí mismo). Menciona: bloqueo tras 5 intentos, sesión de 30 min, bitácora.
+   - Admin que también opera: en la pantalla operativa, con la hora en martes 13:03, pon el dedo de *Ana Sofía (administrador)* → registra su entrada. Luego, con `coordinacion`, intenta justificarse a sí misma: el sistema se lo niega (otro administrador debe hacerlo).
+6. **Respaldos**: pestaña *Respaldos* → *Respaldar ahora*: la copia en la PC queda «Verificado» y la USB desconectada se avisa sin romper nada. Con USB conectada, ambos quedan al corriente.
+7. **Reportes**: Registro de asistencia (pase de lista del día, lo que acabas de registrar en la Parte 1) → Reporte individual → *Justificar* una falta con motivo → *Editar* un estatus → Incidencias → *Generar PDF*.
 
 ## Parte 3 · Qué decir sin que se vea
 
 - **Roles y permisos**: la restricción está en el **servidor**, no solo en la pantalla. Una prueba automática revisa que *toda* ruta administrativa exija sesión de administrador. El operador no tiene forma de modificar nada fuera de entrada, salida e incidencias.
-- **Internet / apagones**: nada depende de internet. Si se cae el servidor, la pantalla avisa «Sin conexión con el sistema» y **se recupera sola** al volver (se probó con un apagón simulado: los datos quedaron íntegros). Si cambia la hora al resincronizar, queda en bitácora y no rompe los registros.
-- **Calidad**: 47 pruebas automáticas, incluida una que verifica que los reportes de la pantalla den exactamente lo mismo que las reglas oficiales del servidor.
+- **Internet / apagones**: nada depende de internet: sin conexión el sistema sigue sirviendo igual. Si se cae el servidor, la pantalla avisa «Sin conexión con el sistema» y **se recupera sola** al volver (se probó con un apagón simulado: los datos quedaron íntegros). Si cambia la hora al resincronizar, queda en bitácora y no rompe los registros.
+- **Calidad**: 68 pruebas automáticas, incluida una que verifica que los reportes de la pantalla den exactamente lo mismo que las reglas oficiales del servidor.
 
 ## Parte 4 · Lo que todavía NO está (dilo tú antes de que pregunten)
 
-- **Lector de huellas real**: falta el SDK y su licencia, y una PC con Windows para probarlo. Hoy se usa un simulador.
+- **Lector de huellas real**: se está probando en la PC del cliente. Hoy la demo usa un simulador.
 - **PDF oficial**: sigue la impresión del navegador con membrete provisional; falta el membrete oficial para el PDF definitivo.
-- **Respaldos** (con USB), **instalación en la PC con Windows** y arranque automático: diseñados, sin probar en la PC.
+- **Instalación en la PC con Windows**, arranque automático y actualización controlada del driver: escritos, sin probar todavía en la PC.
 - Cambio visible de la sesión: el formulario de operadores ahora pide nombre y apellidos por separado.
 
 ## Al terminar
