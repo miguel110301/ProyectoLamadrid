@@ -6,10 +6,10 @@ Sistema local de registro de asistencia e incidencias para TvUAQ. Corre en una s
 
 | Carpeta | Contenido |
 |---|---|
-| `frontend/` | Interfaz (HTML/CSS/JS puro): pantalla operativa `index.html` y administración `admin.html`. Hoy sigue siendo el prototipo con datos en localStorage; falta conectarla a la API. |
+| `frontend/` | Interfaz (HTML/CSS/JS puro): pantalla operativa `index.html` y administración `admin.html`. Ya conectada a la API: no guarda datos en el navegador. |
 | `backend/` | API FastAPI + SQLite: reglas de asistencia, roles, bajas con purga a los 30 días, lector de huellas (simulado). `schema.sql` es el esquema. |
-| `scripts/` | Instalación y arranque en Windows (sin probar). |
-| `docs/` | Documentación (`instalacion-windows.md`) y muestras de PDF. `docs/cliente/` no se versiona (ver `.gitignore`). |
+| `scripts/` | `demo.sh` (demostración en Mac) e instalación/arranque en Windows (sin probar). |
+| `docs/` | `guia-demostracion.md`, `instalacion-windows.md` y muestras de PDF. `docs/cliente/` no se versiona (ver `.gitignore`). |
 
 ## Backend (desarrollo)
 
@@ -24,10 +24,11 @@ TVUAQ_SIMULADOR=1 .venv/bin/python -m uvicorn app.main:app_produccion --factory 
 `TVUAQ_SIMULADOR=1` habilita el lector simulado y `POST /api/dev/huella`. En producción debe ir en `0`.
 La base se guarda en `data/tvuaq.db` (ignorada por git). Variables: `TVUAQ_DB`, `TVUAQ_ZONA`, `TVUAQ_SIMULADOR`.
 
-## Ver solo el prototipo de interfaz
+## Demostración
 
 ```sh
-python3 -m http.server 8765 --bind 127.0.0.1 --directory frontend
+./scripts/demo.sh reiniciar     # base ficticia + lector simulado + modo demostración
 ```
 
-Abrir `http://localhost:8765/` (operativa) y `http://localhost:8765/admin.html`. Acceso del prototipo: `admin` / `admin` (solo demostración).
+Pantalla operativa `http://localhost:8765/` · Administración `http://localhost:8765/admin.html` (demo / demo-tvuaq-26).
+Guion completo en [docs/guia-demostracion.md](docs/guia-demostracion.md).
