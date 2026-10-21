@@ -1,0 +1,30 @@
+/* Fuentes del sitio tv.uaq.mx (Raleway, Roboto, Poppins · licencia OFL), copiadas en local para funcionar sin internet.
+   Raleway y Roboto son fuentes variables: un solo archivo cubre todos los pesos. */
+@font-face {
+  font-family: 'Raleway';
+  font-style: normal;
+  font-weight: 600 800;
+  font-display: swap;
+  src: url('../assets/fonts/raleway.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Roboto';
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url('../assets/fonts/roboto.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url('../assets/fonts/poppins-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Poppins';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('../assets/fonts/poppins-600.woff2') format('woff2');
+}

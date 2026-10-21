@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Registro de turno · Control Maestro TvUAQ</title>
+    <link rel="icon" href="assets/img/logo_tvuaq.png" />
+    <link rel="stylesheet" href="css/fonts.css" />
+    <link rel="stylesheet" href="css/styles.css" />
+  </head>
+  <body>
+    <div class="op">
+      <header class="cab-sitio">
+        <div class="barra">
+          <div class="marca">
+            <img class="marca__logo" src="assets/img/logo_tvuaq.png" alt="TvUAQ" />
+            <span class="marca__texto">Control Maestro<small>Registro de turno e incidencias</small></span>
+          </div>
+        </div>
+        <div class="cab-sitio__acciones">
+          <a class="btn btn--secundario btn--chico" href="admin.html">Administración</a>
+        </div>
+      </header>
+
+      <main class="op__principal">
+        <section class="reloj" aria-label="Hora actual">
+          <div class="reloj__hora" id="reloj" aria-live="off">--:--:--</div>
+          <div class="reloj__fecha" id="fecha"></div>
+        </section>
+
+        <section class="accion-grande" aria-label="Registro">
+          <div class="sensor-hero" id="sensor-card" role="status" aria-live="polite">
+            <span class="sensor-hero__barras" aria-hidden="true"></span>
+            <div class="sensor-hero__ico" id="sensor-ico"></div>
+            <div>
+              <h2 class="sensor-hero__titulo" id="sensor-titulo"></h2>
+              <p class="sensor-hero__texto" id="sensor-texto"></p>
+            </div>
+          </div>
+          <button class="gran-boton gran-boton--incidencia" id="btn-incidencia" type="button"></button>
+        </section>
+
+        <aside class="panel" aria-label="Personal en turno">
+          <h2 class="panel__titulo">En turno ahora</h2>
+          <ul class="en-turno" id="en-turno"></ul>
+        </aside>
+      </main>
+    </div>
+
+    <script src="js/core.js"></script>
+    <script src="js/seed.js"></script>
+    <script src="js/sensor.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/operativa.js"></script>
+  </body>
+</html>

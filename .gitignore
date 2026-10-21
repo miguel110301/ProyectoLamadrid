@@ -1,0 +1,28 @@
+# Contexto de sesión de la IA (solo local)
+PROJECT_CONTEXT.md
+.context-snapshots/
+
+# Sistema operativo / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Datos reales y secretos: NUNCA al repositorio
+.env
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+data/
+backups/
+
+# Documentos del cliente (contrato, capturas con datos personales): decidir antes de versionar
+docs/cliente/
