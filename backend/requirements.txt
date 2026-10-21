@@ -1,0 +1,7 @@
+# Producción. Versiones EXACTAS: el sistema debe seguir funcionando igual aunque salgan versiones nuevas.
+# Solo se cambian a propósito (y se vuelven a descargar los paquetes de vendor/wheels, ver scripts/).
+fastapi==0.156.4
+starlette==1.9.0
+pydantic==2.14.1
+uvicorn==0.54.0
+tzdata==2026.5
