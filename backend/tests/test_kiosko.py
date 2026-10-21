@@ -105,6 +105,22 @@ def test_incidencia_se_envia_con_la_huella_del_operador(kiosko, operador):
     assert kiosko.con.execute("SELECT COUNT(*) c FROM registro_asistencia").fetchone()["c"] == 0   # no cuenta como entrada
 
 
+def test_con_el_formulario_abierto_la_huella_nunca_cuenta_como_entrada(kiosko, operador):
+    """Si la incidencia está incompleta, la huella solo avisa: no debe registrar una entrada por accidente."""
+    kiosko.abrir_incidencia()
+    assert kiosko.procesar(("operador", operador))["evento"] == "incidencia-incompleta"
+    assert kiosko.con.execute("SELECT COUNT(*) c FROM registro_asistencia").fetchone()["c"] == 0
+    kiosko.cancelar_incidencia()                       # al cerrar el formulario vuelve la operación normal
+    kiosko.r.avanzar(20)
+    assert kiosko.procesar(("operador", operador))["evento"] == "entrada"
+
+
+def test_si_el_formulario_deja_de_mandar_latidos_se_da_por_cerrado(kiosko, operador):
+    kiosko.abrir_incidencia()
+    kiosko.r.avanzar(601)
+    assert kiosko.procesar(("operador", operador))["evento"] in ("entrada", "sin-turno")
+
+
 def test_incidencia_invalida(kiosko):
     for datos in ({"tipo": "inventado", "hora": "07:30", "observacion": "x"},
                   {"tipo": "otro", "hora": "7:3", "observacion": "x", "duracion_min": 5},

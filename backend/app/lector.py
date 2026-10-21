@@ -6,6 +6,7 @@ Hoy solo existe el simulador (desarrollo en Mac). Cuando haya SDK del DigitalPer
 Una lectura entrega una `Persona`: ("operador", id) · ("administrador", id) · None (huella no reconocida).
 La identificación solo considera operadores ACTIVOS y administradores activos.
 """
+import secrets
 from typing import Callable, Optional, Protocol
 
 Persona = Optional[tuple[str, int]]
@@ -13,6 +14,14 @@ Persona = Optional[tuple[str, int]]
 
 class Lector(Protocol):
     def suscribir(self, callback: Callable[[Persona], None]) -> None: ...
+
+    def enrolar(self) -> bytes:
+        """Captura una huella nueva y devuelve su plantilla. Sin SDK no hay lector real: lanza LectorNoDisponible."""
+        ...
+
+
+class LectorNoDisponible(Exception):
+    pass
 
 
 class LectorSimulado:
@@ -23,6 +32,9 @@ class LectorSimulado:
 
     def suscribir(self, callback: Callable[[Persona], None]) -> None:
         self._callbacks.append(callback)
+
+    def enrolar(self) -> bytes:
+        return secrets.token_bytes(64)   # plantilla ficticia: el simulador identifica por id, no por la imagen
 
     def poner_dedo(self, persona: Persona) -> None:
         for cb in list(self._callbacks):

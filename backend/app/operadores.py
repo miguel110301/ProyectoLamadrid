@@ -53,10 +53,18 @@ def cambiar_horario(con, id_op: int, horarios: list[dict], desde_fecha: str, act
     """Versiona el horario: cierra el vigente el día anterior y abre el nuevo, para no reescribir faltas pasadas."""
     _validar_horarios(horarios)
     abiertos = con.execute("SELECT * FROM horario WHERE id_operador = ? AND vigente_hasta IS NULL", (id_op,)).fetchall()
-    if any(h["vigente_desde"] >= desde_fecha for h in abiertos):
-        raise ErrorNegocio("fecha-invalida", "La fecha del cambio debe ser posterior al inicio del horario actual.")
+    if any(h["vigente_desde"] > desde_fecha for h in abiertos):
+        raise ErrorNegocio("fecha-invalida", "La fecha del cambio no puede ser anterior al inicio del horario actual.")
     cierre = (date.fromisoformat(desde_fecha) - timedelta(days=1)).isoformat()
     with transaccion(con):
+        # Un cambio hecho el mismo día de otro lo reemplaza, siempre que ese turno aún no tenga registros ni ajustes
+        for h in [h for h in abiertos if h["vigente_desde"] == desde_fecha]:
+            usado = any(con.execute(f"SELECT 1 FROM {t} WHERE id_horario = ?", (h["id"],)).fetchone()
+                        for t in ("registro_asistencia", "justificacion", "ajuste_estatus"))
+            if usado:
+                raise ErrorNegocio("horario-en-uso", "Ese horario ya tiene asistencias hoy; el cambio puede aplicarse desde mañana.", 409)
+            con.execute("DELETE FROM horario WHERE id = ?", (h["id"],))
+        abiertos = [h for h in abiertos if h["vigente_desde"] != desde_fecha]
         con.execute("UPDATE horario SET vigente_hasta = ? WHERE id_operador = ? AND vigente_hasta IS NULL", (cierre, id_op))
         for h in horarios:
             con.execute("INSERT INTO horario (id_operador, dia_semana, hora_inicio, hora_fin, vigente_desde) VALUES (?,?,?,?,?)",
@@ -157,3 +165,31 @@ def quitar_edicion(con, id_op, fecha, id_horario, actor_id, ahora) -> None:
     with transaccion(con):
         con.execute("DELETE FROM ajuste_estatus WHERE id_operador = ? AND id_horario = ? AND fecha = ?", (id_op, id_horario, fecha))
         bitacora(con, ahora, "administrador", actor_id, "quitar-edicion", "operador", id_op, f"{fecha} horario {id_horario}")
+
+
+# ---------- Datos personales y huellas ----------
+
+def actualizar_operador(con, id_op: int, datos: dict, actor_id: int, ahora: int) -> None:
+    for campo in ("nombres", "ap_paterno", "nacimiento", "expediente"):
+        if not str(datos.get(campo, "")).strip():
+            raise ErrorNegocio("datos-incompletos", f"Falta el campo «{campo}».")
+    with transaccion(con):
+        try:
+            cur = con.execute(
+                "UPDATE operador SET nombres = ?, ap_paterno = ?, ap_materno = ?, nacimiento = ?, expediente = ?, carrera = ? WHERE id = ?",
+                (datos["nombres"].strip(), datos["ap_paterno"].strip(), datos.get("ap_materno", "").strip(), datos["nacimiento"],
+                 datos["expediente"].strip(), datos.get("carrera", "").strip(), id_op))
+        except sqlite3.IntegrityError:
+            raise ErrorNegocio("expediente-repetido", "Ya existe un operador con ese expediente.", 409)
+        if cur.rowcount == 0:
+            raise ErrorNegocio("no-existe", "No existe ese operador.", 404)
+        bitacora(con, ahora, "administrador", actor_id, "editar-operador", "operador", id_op)
+
+
+def guardar_huella(con, plantilla: bytes, actor_id: int, ahora: int, id_operador: int | None = None, id_administrador: int | None = None) -> None:
+    """Guarda (o reemplaza) la plantilla de huella de un operador o de un administrador."""
+    columna, valor = ("id_operador", id_operador) if id_operador else ("id_administrador", id_administrador)
+    with transaccion(con):
+        con.execute(f"DELETE FROM huella WHERE {columna} = ?", (valor,))
+        con.execute(f"INSERT INTO huella ({columna}, plantilla, creado_ts) VALUES (?,?,?)", (valor, plantilla, ahora))
+        bitacora(con, ahora, "administrador", actor_id, "registrar-huella", "operador" if id_operador else "administrador", valor)

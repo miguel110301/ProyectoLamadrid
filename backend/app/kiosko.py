@@ -13,7 +13,7 @@ from .reglas import MIN, Cfg, a_ts, estado_entrada, fecha_de, registro_vigente, 
 from .seguridad import ErrorNegocio, bitacora
 
 CONFIRMAR_SALIDA_S = 30     # tiempo para aceptar "aún no termina tu turno"
-INCIDENCIA_ESPERA_S = 180   # tiempo que el formulario de incidencia espera la huella
+INCIDENCIA_ESPERA_S = 600   # el formulario de incidencia abierto manda latidos; sin ellos se da por cerrado
 HORA = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 
 
@@ -27,6 +27,10 @@ class Kiosko:
         self._ultima_lectura: dict[int, float] = {}   # operador → reloj monotónico (inmune a saltos de hora)
         self._confirmacion: dict | None = None
         self._incidencia: dict | None = None
+
+    def olvidar_lecturas(self) -> None:
+        """Solo para la demostración: al mover la hora del sistema, el antirrebote vuelve a empezar."""
+        self._ultima_lectura.clear()
 
     # ---------- lectura de huella ----------
     def procesar(self, persona: Persona) -> dict:
@@ -43,10 +47,13 @@ class Kiosko:
         nombre = f"{op['nombres']} {op['ap_paterno']} {op['ap_materno']}".strip()
         cfg = Cfg.desde_db(self.con)
 
-        # Una incidencia en espera se envía con la huella (no cuenta como entrada ni salida)
-        if self._incidencia and self.mono() <= self._incidencia["expira"]:
+        # Con el formulario de incidencia abierto, la huella NUNCA cuenta como entrada ni salida:
+        # envía la incidencia si está completa, o avisa que falta llenarla.
+        inc = self._incidencia_activa()
+        if inc:
+            if inc["datos"] is None:
+                return {"evento": "incidencia-incompleta", "operador": nombre}
             return self._guardar_incidencia(op, nombre, ahora)
-        self._incidencia = None
 
         if self._es_rebote(op["id"], ahora, cfg):
             return {"evento": "duplicado", "operador": nombre}
@@ -106,8 +113,22 @@ class Kiosko:
         return {"evento": "salida", "operador": nombre, "ts": ts, "trabajado_min": trabajado, "falto_min": max(0, prog - trabajado)}
 
     # ---------- incidencias ----------
+    def _incidencia_activa(self):
+        if self._incidencia and self.mono() <= self._incidencia["expira"]:
+            return self._incidencia
+        self._incidencia = None
+        return None
+
+    def abrir_incidencia(self) -> None:
+        """El formulario se abrió (o manda un latido): mientras siga abierto, las huellas no registran entrada/salida."""
+        inc = self._incidencia_activa()
+        if inc:
+            inc["expira"] = self.mono() + INCIDENCIA_ESPERA_S
+        else:
+            self._incidencia = {"datos": None, "expira": self.mono() + INCIDENCIA_ESPERA_S}
+
     def preparar_incidencia(self, datos: dict) -> None:
-        """Valida el formulario y queda esperando la huella de quien la envía."""
+        """Valida el formulario completo; queda listo para enviarse con la huella de quien la registra."""
         tipo = self.con.execute("SELECT * FROM tipo_incidencia WHERE id = ?", (datos.get("tipo"),)).fetchone()
         if tipo is None:
             raise ErrorNegocio("tipo-invalido", "Elige un tipo de incidencia.")
@@ -118,8 +139,14 @@ class Kiosko:
         dur = datos.get("duracion_min")
         if tipo["requiere_duracion"] and not (isinstance(dur, int) and dur > 0):
             raise ErrorNegocio("duracion-obligatoria", "Indica la duración de la incidencia.")
-        self._incidencia = {"datos": {**datos, "duracion_min": dur if tipo["requiere_duracion"] else None},
-                            "expira": self.mono() + INCIDENCIA_ESPERA_S}
+        self.abrir_incidencia()
+        self._incidencia["datos"] = {**datos, "duracion_min": dur if tipo["requiere_duracion"] else None}
+
+    def borrar_borrador(self) -> None:
+        """El formulario quedó incompleto: sigue abierto, pero ya no hay nada que enviar."""
+        inc = self._incidencia_activa()
+        if inc:
+            inc["datos"] = None
 
     def cancelar_incidencia(self) -> None:
         self._incidencia = None

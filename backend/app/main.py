@@ -11,6 +11,7 @@ import asyncio
 import contextlib
 import json
 import time
+from datetime import datetime
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
@@ -19,9 +20,9 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import config, db, operadores, reglas, seguridad
+from . import config, db, operadores, reglas, seguridad, vista
 from .kiosko import Kiosko
-from .lector import Lector, LectorSimulado
+from .lector import Lector, LectorNoDisponible, LectorSimulado
 from .seguridad import ErrorNegocio
 
 COOKIE = "tvuaq_sesion"
@@ -54,6 +55,15 @@ class OperadorNuevo(BaseModel):
     expediente: str
     carrera: str = ""
     horarios: list[Turno]
+
+
+class OperadorDatos(BaseModel):
+    nombres: str
+    ap_paterno: str
+    ap_materno: str = ""
+    nacimiento: str
+    expediente: str
+    carrera: str = ""
 
 
 class CambioHorario(BaseModel):
@@ -101,6 +111,10 @@ class Confirmacion(BaseModel):
     aceptar: bool
 
 
+class RelojDemo(BaseModel):
+    ahora: str | None = None   # 'YYYY-MM-DDTHH:MM' hora local; None = volver a la hora real
+
+
 class DedoSimulado(BaseModel):
     tipo: str | None = None   # 'operador' | 'administrador' | None (no reconocida)
     id: int | None = None
@@ -109,6 +123,11 @@ class DedoSimulado(BaseModel):
 def crear_app(entorno: config.Entorno | None = None, con=None, lector: Lector | None = None, reloj=_ms, mono=time.monotonic) -> FastAPI:
     entorno = entorno or config.cargar()
     zona = ZoneInfo(entorno.zona_horaria)
+    desfase = {"ms": 0}   # solo cambia con el simulador (modo demostración); en producción siempre es 0
+    reloj_real = reloj
+
+    def reloj() -> int:
+        return reloj_real() + desfase["ms"]
 
     @contextlib.asynccontextmanager
     async def ciclo(app: FastAPI):
@@ -123,7 +142,7 @@ def crear_app(entorno: config.Entorno | None = None, con=None, lector: Lector | 
     if con is None:
         con = db.conectar(entorno.ruta_db)
         db.iniciar(con)
-    app.state.con, app.state.zona, app.state.reloj = con, zona, reloj
+    app.state.con, app.state.zona, app.state.reloj, app.state.reloj_real = con, zona, reloj, reloj_real
     app.state.kiosko = Kiosko(con, zona, reloj=reloj, mono=mono)
     app.state.lector = lector or LectorSimulado()
     app.state.suscriptores: list[asyncio.Queue] = []
@@ -157,14 +176,17 @@ def crear_app(entorno: config.Entorno | None = None, con=None, lector: Lector | 
         cliente = request.client.host if request.client else ""
         if cliente not in ("127.0.0.1", "::1", "testclient") or host not in LOCALES or (origen_host and origen_host not in LOCALES):
             return JSONResponse({"codigo": "prohibido", "mensaje": "Acceso no permitido."}, status_code=403)
-        return await llamada(request)
+        resp = await llamada(request)
+        if request.url.path.startswith("/api/"):
+            resp.headers["Cache-Control"] = "no-store"
+        return resp
 
     @app.exception_handler(ErrorNegocio)
     async def error_negocio(_, e: ErrorNegocio):
         return JSONResponse({"codigo": e.codigo, "mensaje": e.mensaje}, status_code=e.http)
 
     def requiere_admin(request: Request):
-        adm = seguridad.administrador_de_sesion(app.state.con, request.cookies.get(COOKIE), app.state.reloj())
+        adm = seguridad.administrador_de_sesion(app.state.con, request.cookies.get(COOKIE), reloj_real())
         if adm is None:
             raise ErrorNegocio("no-autenticado", "Inicia sesión como administrador.", 401)
         return adm
@@ -177,7 +199,7 @@ def crear_app(entorno: config.Entorno | None = None, con=None, lector: Lector | 
 
     @auth.post("/login")
     async def login(datos: Login, resp: Response):
-        poner_cookie(resp, seguridad.iniciar_sesion(app.state.con, datos.usuario, datos.clave, app.state.reloj()))
+        poner_cookie(resp, seguridad.iniciar_sesion(app.state.con, datos.usuario, datos.clave, reloj_real()))
         return {"ok": True}
 
     @auth.post("/huella")
@@ -191,7 +213,7 @@ def crear_app(entorno: config.Entorno | None = None, con=None, lector: Lector | 
             raise ErrorNegocio("sin-huella", "No se recibió la huella del administrador.", 408)
         finally:
             app.state.esperando_admin.remove(futuro)
-        poner_cookie(resp, seguridad.abrir_sesion(app.state.con, id_adm, app.state.reloj()))
+        poner_cookie(resp, seguridad.abrir_sesion(app.state.con, id_adm, reloj_real()))
         return {"ok": True}
 
     @auth.post("/logout")
@@ -226,6 +248,11 @@ def crear_app(entorno: config.Entorno | None = None, con=None, lector: Lector | 
 
         return StreamingResponse(flujo(), media_type="text/event-stream", headers={"Cache-Control": "no-store"})
 
+    @kiosko.get("/hora")
+    async def hora():
+        """Hora del servidor: la pantalla se alinea con ella (en demostración puede estar adelantada o atrasada)."""
+        return {"ts": app.state.reloj()}
+
     @kiosko.get("/tipos-incidencia")
     async def tipos():
         return [dict(f) for f in app.state.con.execute("SELECT id, nombre, requiere_duracion FROM tipo_incidencia")]
@@ -241,10 +268,20 @@ def crear_app(entorno: config.Entorno | None = None, con=None, lector: Lector | 
                 out.append({"nombre": f"{o['nombres']} {o['ap_paterno']}", "entrada_ts": v[0]["entrada_ts"], "fin": v[1]["fin"]})
         return out
 
-    @kiosko.post("/incidencia")
+    @kiosko.post("/incidencia/abrir")
+    async def abrir_incidencia():
+        app.state.kiosko.abrir_incidencia()
+        return {"ok": True}
+
+    @kiosko.put("/incidencia")
     async def incidencia(datos: Incidencia):
         app.state.kiosko.preparar_incidencia(datos.model_dump())
         return {"esperando_huella": True}
+
+    @kiosko.delete("/incidencia/borrador")
+    async def borrar_borrador():
+        app.state.kiosko.borrar_borrador()
+        return {"ok": True}
 
     @kiosko.delete("/incidencia")
     async def cancelar_incidencia():
@@ -272,6 +309,35 @@ def crear_app(entorno: config.Entorno | None = None, con=None, lector: Lector | 
         if o is None:
             raise ErrorNegocio("no-existe", "No existe ese operador.", 404)
         return o
+
+    @admin.get("/datos")
+    async def datos():
+        """Todo lo que la interfaz de administración necesita para pintar sus tablas y reportes."""
+        return vista.snapshot(app.state.con, zona, app.state.reloj())
+
+    @admin.put("/operadores/{id_op}")
+    async def editar_operador(id_op: int, datos: OperadorDatos, adm=Depends(requiere_admin)):
+        operadores.actualizar_operador(app.state.con, id_op, datos.model_dump(), adm["id"], app.state.reloj())
+        return _operador_json(_op(id_op))
+
+    def _enrolar() -> bytes:
+        try:
+            return app.state.lector.enrolar()
+        except (LectorNoDisponible, AttributeError):
+            raise ErrorNegocio("lector-no-disponible", "El lector de huellas no está disponible en este equipo.", 501)
+
+    @admin.post("/operadores/{id_op}/huella")
+    async def huella_operador(id_op: int, adm=Depends(requiere_admin)):
+        _op(id_op)
+        operadores.guardar_huella(app.state.con, _enrolar(), adm["id"], app.state.reloj(), id_operador=id_op)
+        return {"ok": True}
+
+    @admin.post("/administradores/{id_adm}/huella")
+    async def huella_admin(id_adm: int, adm=Depends(requiere_admin)):
+        if app.state.con.execute("SELECT 1 FROM administrador WHERE id = ?", (id_adm,)).fetchone() is None:
+            raise ErrorNegocio("no-existe", "No existe ese administrador.", 404)
+        operadores.guardar_huella(app.state.con, _enrolar(), adm["id"], app.state.reloj(), id_administrador=id_adm)
+        return {"ok": True}
 
     @admin.get("/operadores")
     async def listar_operadores(inactivos: bool = False):
@@ -337,7 +403,10 @@ def crear_app(entorno: config.Entorno | None = None, con=None, lector: Lector | 
 
     @admin.get("/administradores")
     async def listar_admins():
-        return [dict(f) for f in app.state.con.execute("SELECT id, usuario, nombre, activo, creado_ts FROM administrador ORDER BY id")]
+        return [dict(f) for f in app.state.con.execute(
+            """SELECT a.id, a.usuario, a.nombre, a.activo, a.creado_ts, c.nombre AS creado_por,
+                      EXISTS (SELECT 1 FROM huella h WHERE h.id_administrador = a.id) AS huella
+               FROM administrador a LEFT JOIN administrador c ON c.id = a.creado_por ORDER BY a.id""")]
 
     @admin.post("/administradores")
     async def nuevo_admin(datos: AdminNuevo, adm=Depends(requiere_admin)):
@@ -370,6 +439,36 @@ def crear_app(entorno: config.Entorno | None = None, con=None, lector: Lector | 
             app.state.lector.poner_dedo(persona)
             return {"ok": True}
 
+        @app.post("/api/dev/reloj")
+        async def reloj_demo(datos: RelojDemo):
+            """Modo demostración: mueve la hora del sistema para mostrar a tiempo / retardo / falta / baja a los 30 días."""
+            if datos.ahora is None:
+                desfase["ms"] = 0
+            else:
+                try:
+                    deseado = int(datetime.fromisoformat(datos.ahora).replace(tzinfo=zona).timestamp() * 1000)
+                except ValueError:
+                    raise ErrorNegocio("fecha-invalida", "Usa el formato AAAA-MM-DDTHH:MM.")
+                desfase["ms"] = deseado - reloj_real()
+            app.state.kiosko.olvidar_lecturas()
+            seguridad.bitacora(app.state.con, app.state.reloj(), "sistema", None, "reloj-demo", detalle=f"{desfase['ms'] // 1000} s")
+            return {"ts": app.state.reloj()}
+
+        @app.post("/api/dev/purgar")
+        async def purgar_ahora():
+            return {"purgados": operadores.purgar(app.state.con, app.state.reloj())}
+
+        @app.get("/api/dev/personas")
+        async def personas_simuladas():
+            """Quién puede 'poner el dedo' en el simulador: solo quienes ya tienen huella registrada y están activos."""
+            c = app.state.con
+            ops = c.execute("""SELECT o.id, o.nombres, o.ap_paterno, o.ap_materno FROM operador o
+                               WHERE o.activo = 1 AND EXISTS (SELECT 1 FROM huella h WHERE h.id_operador = o.id) ORDER BY o.ap_paterno, o.nombres""")
+            adms = c.execute("""SELECT a.id, a.nombre FROM administrador a
+                                WHERE a.activo = 1 AND EXISTS (SELECT 1 FROM huella h WHERE h.id_administrador = a.id)""")
+            return ([{"tipo": "administrador", "id": a["id"], "nombre": f"{a['nombre']} (administrador)"} for a in adms]
+                    + [{"tipo": "operador", "id": o["id"], "nombre": vista.nombre_completo(o)} for o in ops])
+
     if FRONTEND.is_dir():
         app.mount("/", StaticFiles(directory=FRONTEND, html=True), name="frontend")
     return app
@@ -393,7 +492,7 @@ async def _mantenimiento(app: FastAPI) -> None:
     while True:
         try:
             operadores.purgar(app.state.con, app.state.reloj())
-            app.state.con.execute("DELETE FROM sesion WHERE ? - ultimo_uso_ts > ?", (app.state.reloj(), seguridad.INACTIVIDAD_MS))
+            app.state.con.execute("DELETE FROM sesion WHERE ? - ultimo_uso_ts > ?", (app.state.reloj_real(), seguridad.INACTIVIDAD_MS))
         except Exception as e:  # nunca debe tumbar el servidor
             seguridad.bitacora(app.state.con, app.state.reloj(), "sistema", None, "error-mantenimiento", detalle=type(e).__name__)
         await asyncio.sleep(3600)
