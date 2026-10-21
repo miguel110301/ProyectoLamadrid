@@ -10,10 +10,11 @@ python -m venv backend\.venv
 & backend\.venv\Scripts\python.exe -m pip install --no-index --find-links backend\vendor\wheels -r backend\requirements.txt
 
 # 2) Carpetas de datos (fuera del código; el repositorio las ignora)
-New-Item -ItemType Directory -Force -Path data, backups | Out-Null
+New-Item -ItemType Directory -Force -Path data, backups, drivers\lector\nuevo, drivers\lector\anterior | Out-Null
 
-# 3) Primer administrador (no existe usuario por defecto)
+# 3) Primer administrador y superusuario de respaldo (no existe usuario por defecto)
 Push-Location backend
 $env:TVUAQ_DB = Join-Path $raiz 'data\tvuaq.db'
-& .venv\Scripts\python.exe -m app.crear_admin
+& .venv\Scripts\python.exe -m app.crear_admin           # administrador del cliente
+& .venv\Scripts\python.exe -m app.crear_admin --super   # superusuario del equipo desarrollador (cuenta de respaldo)
 Pop-Location

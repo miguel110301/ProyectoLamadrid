@@ -20,8 +20,19 @@ def conectar(ruta: Path | str) -> sqlite3.Connection:
     return con
 
 
+# Columnas agregadas después de la primera versión: las bases ya creadas las reciben al arrancar
+MIGRACIONES = [
+    ("administrador", "rol", "TEXT NOT NULL DEFAULT 'administrador' CHECK (rol IN ('administrador', 'superusuario'))"),
+    ("administrador", "id_operador", "INTEGER REFERENCES operador (id) ON DELETE RESTRICT"),
+]
+
+
 def iniciar(con: sqlite3.Connection) -> None:
     con.executescript(SCHEMA.read_text(encoding="utf-8"))
+    for tabla, columna, definicion in MIGRACIONES:
+        existentes = {f["name"] for f in con.execute(f"PRAGMA table_info({tabla})")}
+        if columna not in existentes:
+            con.execute(f"ALTER TABLE {tabla} ADD COLUMN {columna} {definicion}")
 
 
 def config_int(con: sqlite3.Connection, clave: str) -> int:

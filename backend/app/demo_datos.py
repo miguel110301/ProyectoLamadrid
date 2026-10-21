@@ -4,6 +4,7 @@
 
 Nunca toca la base real: se niega a borrar un archivo cuyo nombre no contenga «demo».
 Administrador de la demo: usuario `demo` · contraseña `demo-tvuaq-26` (también tiene huella en el simulador).
+Superusuario de la demo: `super` · `super-tvuaq-26`. Administradora que también opera: `coordinacion` (Ana Sofía Martínez).
 """
 import random
 import sys
@@ -15,6 +16,7 @@ from . import config, db, seguridad
 from .reglas import MIN, a_ts, dia_semana
 
 USUARIO, CLAVE = "demo", "demo-tvuaq-26"
+SUPER, CLAVE_SUPER = "super", "super-tvuaq-26"
 
 OPERADORES = [
     ("Juan Carlos", "Pérez", "Hernández", "2002-03-14", "281045", "Comunicación y Periodismo", [(1, "07:00", "12:00"), (3, "15:00", "21:00")]),
@@ -48,6 +50,8 @@ def poblar(con, zona: ZoneInfo, ahora: int | None = None, dias: int = 28) -> Non
 
     adm = seguridad.crear_administrador(con, USUARIO, "Administrador de demostración", CLAVE, ahora)
     con.execute("INSERT INTO huella (id_administrador, plantilla, creado_ts) VALUES (?,?,?)", (adm, b"demo", ahora))
+    sup = seguridad.crear_administrador(con, SUPER, "Superusuario FRACTAL", CLAVE_SUPER, ahora, rol="superusuario")
+    con.execute("INSERT INTO huella (id_administrador, plantilla, creado_ts) VALUES (?,?,?)", (sup, b"demo", ahora))
     tipos = [f["id"] for f in con.execute("SELECT id FROM tipo_incidencia")]
     requieren = {f["id"] for f in con.execute("SELECT id FROM tipo_incidencia WHERE requiere_duracion = 1")}
 
@@ -100,6 +104,14 @@ def poblar(con, zona: ZoneInfo, ahora: int | None = None, dias: int = 28) -> Non
                                  entre(2, 45) if tipo in requieren else None, OBSERVACIONES[tipo]))
 
 
+def _vincular_coordinacion(con, ahora: int, creado_por: int) -> None:
+    """Ana Sofía es operadora y también administradora: su huella registra su propia asistencia."""
+    op = con.execute("SELECT id FROM operador WHERE expediente = '271904'").fetchone()
+    a = seguridad.crear_administrador(con, "coordinacion", "Ana Sofía Martínez Vega", "coordinacion-2026", ahora,
+                                      creado_por=creado_por, id_operador=op["id"])
+    con.execute("INSERT INTO huella (id_administrador, plantilla, creado_ts) VALUES (?,?,?)", (a, b"demo", ahora))
+
+
 def main() -> int:
     entorno = config.cargar()
     ruta = entorno.ruta_db
@@ -114,8 +126,10 @@ def main() -> int:
     if con.execute("SELECT COUNT(*) c FROM operador").fetchone()["c"]:
         print("La base de demostración ya tiene datos (usa --reiniciar para empezar de cero).")
         return 0
-    poblar(con, ZoneInfo(entorno.zona_horaria))
-    print(f"Base de demostración lista en {ruta}\nAdministrador: {USUARIO} / {CLAVE}")
+    ahora = int(time.time() * 1000)
+    poblar(con, ZoneInfo(entorno.zona_horaria), ahora=ahora)
+    _vincular_coordinacion(con, ahora, con.execute("SELECT id FROM administrador WHERE rol = 'administrador' ORDER BY id").fetchone()["id"])
+    print(f"Base de demostración lista en {ruta}\nAdministrador: {USUARIO} / {CLAVE}  ·  Superusuario: {SUPER} / {CLAVE_SUPER}")
     return 0
 
 

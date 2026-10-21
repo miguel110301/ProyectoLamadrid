@@ -15,7 +15,11 @@ CREATE TABLE IF NOT EXISTS administrador (
     creado_ts     INTEGER NOT NULL,
     creado_por    INTEGER REFERENCES administrador (id) ON DELETE RESTRICT,
     intentos_fallidos INTEGER NOT NULL DEFAULT 0,
-    bloqueado_hasta_ts INTEGER
+    bloqueado_hasta_ts INTEGER,
+    -- 'superusuario' es la cuenta de respaldo del equipo desarrollador: nadie más puede desactivarla ni cambiarle la clave
+    rol           TEXT    NOT NULL DEFAULT 'administrador' CHECK (rol IN ('administrador', 'superusuario')),
+    -- Si el administrador también es operador, su huella también registra su entrada, salida e incidencias
+    id_operador   INTEGER REFERENCES operador (id) ON DELETE RESTRICT
 );
 
 CREATE TABLE IF NOT EXISTS operador (
@@ -124,6 +128,19 @@ CREATE TABLE IF NOT EXISTS incidencia (
     observacion    TEXT    NOT NULL CHECK (length(trim(observacion)) > 0)
 );
 CREATE INDEX IF NOT EXISTS ix_incidencia_fecha ON incidencia (fecha);
+
+-- Historial de respaldos (el archivo vive en la carpeta de destino; aquí solo el registro)
+CREATE TABLE IF NOT EXISTS respaldo (
+    id        INTEGER PRIMARY KEY,
+    ts        INTEGER NOT NULL,
+    destino   TEXT    NOT NULL CHECK (destino IN ('local', 'usb')),
+    archivo   TEXT    NOT NULL,
+    bytes     INTEGER NOT NULL DEFAULT 0,
+    sha256    TEXT    NOT NULL DEFAULT '',
+    ok        INTEGER NOT NULL CHECK (ok IN (0, 1)),
+    detalle   TEXT    NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS ix_respaldo_destino ON respaldo (destino, ts);
 
 CREATE TABLE IF NOT EXISTS configuracion (
     clave  TEXT PRIMARY KEY,

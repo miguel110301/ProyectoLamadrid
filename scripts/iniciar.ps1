@@ -4,6 +4,9 @@ $raiz = Split-Path -Parent $PSScriptRoot
 $py = Join-Path $raiz 'backend\.venv\Scripts\python.exe'
 $env:TVUAQ_DB = Join-Path $raiz 'data\tvuaq.db'
 $env:TVUAQ_SIMULADOR = '0'   # producción: sin lector simulado
+# Respaldos: carpeta en la PC y memoria USB. AJUSTAR la letra de la USB al instalar (si no está conectada, solo se avisa en pantalla)
+$env:TVUAQ_RESPALDO_LOCAL = Join-Path $raiz 'backups'
+$env:TVUAQ_RESPALDO_USB = 'E:\TvUAQ'
 
 # El servidor se relanza solo si se cae; el apagón se resuelve porque la base usa WAL + sincronización completa
 $servidor = Start-Process -FilePath $py -WorkingDirectory (Join-Path $raiz 'backend') -WindowStyle Hidden -PassThru `

@@ -51,28 +51,53 @@ def bitacora(con, ts, actor_tipo, actor_id, accion, entidad=None, entidad_id=Non
         (ts, actor_tipo, actor_id, accion, entidad, entidad_id, detalle))
 
 
-def crear_administrador(con, usuario: str, nombre: str, clave: str, ahora: int, creado_por: int | None = None) -> int:
-    """Crea un administrador. El primero (creado_por=None) solo se crea desde la consola de la PC (app/crear_admin.py)."""
+ROLES = ("administrador", "superusuario")
+
+
+def _rol_de(con, id_administrador: int) -> str | None:
+    f = con.execute("SELECT rol FROM administrador WHERE id = ?", (id_administrador,)).fetchone()
+    return f["rol"] if f else None
+
+
+def crear_administrador(con, usuario: str, nombre: str, clave: str, ahora: int, creado_por: int | None = None,
+                        rol: str = "administrador", id_operador: int | None = None) -> int:
+    """Crea un administrador. El primero y el superusuario (creado_por=None) solo se crean desde la consola de la PC (app/crear_admin.py).
+
+    Con `id_operador`, el administrador también es un operador: su huella registra su propia entrada, salida e incidencias.
+    """
     usuario, nombre = usuario.strip(), nombre.strip()
     if not usuario or not nombre:
         raise ErrorNegocio("datos-incompletos", "Usuario y nombre son obligatorios.")
+    if rol not in ROLES:
+        raise ErrorNegocio("rol-invalido", "Rol no válido.")
+    if rol == "superusuario" and creado_por is not None:
+        raise ErrorNegocio("solo-consola", "El superusuario solo se crea desde la consola de la PC.", 403)
     validar_clave(clave, usuario)
+    if id_operador is not None:
+        op = con.execute("SELECT activo FROM operador WHERE id = ?", (id_operador,)).fetchone()
+        if op is None or not op["activo"]:
+            raise ErrorNegocio("operador-invalido", "Ese operador no existe o está dado de baja.")
+        if con.execute("SELECT 1 FROM administrador WHERE id_operador = ?", (id_operador,)).fetchone():
+            raise ErrorNegocio("operador-ya-vinculado", "Ese operador ya tiene una cuenta de administrador.", 409)
     with transaccion(con):
         try:
             cur = con.execute(
-                "INSERT INTO administrador (usuario, nombre, clave_hash, creado_ts, creado_por) VALUES (?,?,?,?,?)",
-                (usuario, nombre, hash_clave(clave), ahora, creado_por))
+                "INSERT INTO administrador (usuario, nombre, clave_hash, creado_ts, creado_por, rol, id_operador) VALUES (?,?,?,?,?,?,?)",
+                (usuario, nombre, hash_clave(clave), ahora, creado_por, rol, id_operador))
         except sqlite3.IntegrityError:
             raise ErrorNegocio("usuario-repetido", "Ya existe un administrador con ese usuario.", 409)
-        bitacora(con, ahora, "administrador" if creado_por else "sistema", creado_por, "crear-administrador",
+        bitacora(con, ahora, "administrador" if creado_por else "sistema", creado_por, "crear-" + rol,
                  "administrador", cur.lastrowid)
     return cur.lastrowid
 
 
 def cambiar_clave(con, id_administrador: int, clave_nueva: str, ahora: int, actor_id: int) -> None:
-    adm = con.execute("SELECT usuario FROM administrador WHERE id = ?", (id_administrador,)).fetchone()
+    """Cada quien cambia su propia clave. El superusuario puede restablecer la de un administrador; nadie, la suya."""
+    adm = con.execute("SELECT usuario, rol FROM administrador WHERE id = ?", (id_administrador,)).fetchone()
     if adm is None:
         raise ErrorNegocio("no-existe", "No existe ese administrador.", 404)
+    if actor_id != id_administrador and _rol_de(con, actor_id) != "superusuario":
+        raise ErrorNegocio("sin-permiso", "Solo el superusuario puede cambiar la contraseña de otra persona.", 403)
     validar_clave(clave_nueva, adm["usuario"])
     with transaccion(con):
         con.execute("UPDATE administrador SET clave_hash = ?, intentos_fallidos = 0, bloqueado_hasta_ts = NULL WHERE id = ?",
@@ -82,8 +107,16 @@ def cambiar_clave(con, id_administrador: int, clave_nueva: str, ahora: int, acto
 
 
 def desactivar_administrador(con, id_administrador: int, ahora: int, actor_id: int) -> None:
-    activos = con.execute("SELECT COUNT(*) c FROM administrador WHERE activo = 1").fetchone()["c"]
-    if activos <= 1:
+    """Solo el superusuario desactiva cuentas, y nunca la suya: así nadie puede sacar a los demás para quedarse con el control."""
+    if _rol_de(con, actor_id) != "superusuario":
+        raise ErrorNegocio("sin-permiso", "Solo el superusuario puede desactivar administradores.", 403)
+    if _rol_de(con, id_administrador) == "superusuario":
+        raise ErrorNegocio("superusuario-protegido", "El superusuario no se puede desactivar.", 403)
+    activos = con.execute("SELECT COUNT(*) c FROM administrador WHERE activo = 1 AND rol = 'administrador'").fetchone()["c"]
+    objetivo = con.execute("SELECT activo FROM administrador WHERE id = ?", (id_administrador,)).fetchone()
+    if objetivo is None:
+        raise ErrorNegocio("no-existe", "No existe ese administrador.", 404)
+    if objetivo["activo"] and activos <= 1:
         raise ErrorNegocio("ultimo-admin", "No se puede desactivar al único administrador activo.", 409)
     with transaccion(con):
         con.execute("UPDATE administrador SET activo = 0 WHERE id = ?", (id_administrador,))

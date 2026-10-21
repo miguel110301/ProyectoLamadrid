@@ -53,15 +53,21 @@ def test_un_administrador_puede_crear_otro_y_queda_en_bitacora(con, admin):
     assert fila["actor_id"] == admin
 
 
-def test_no_se_puede_desactivar_al_ultimo_administrador(con, admin):
-    with pytest.raises(ErrorNegocio):
+def test_solo_el_superusuario_desactiva_y_nunca_al_ultimo_administrador(con, admin):
+    sup = seg.crear_administrador(con, "super", "Superusuario", "super-clave-77", T0, rol="superusuario")
+    with pytest.raises(ErrorNegocio) as e:                      # un administrador no puede desactivar a nadie
         seg.desactivar_administrador(con, admin, T0, admin)
+    assert e.value.codigo == "sin-permiso"
+    with pytest.raises(ErrorNegocio) as e:                      # ni siquiera el superusuario puede dejar el sistema sin administradores
+        seg.desactivar_administrador(con, admin, T0, sup)
+    assert e.value.codigo == "ultimo-admin"
 
 
 def test_desactivar_cierra_sus_sesiones(con, admin):
+    sup = seg.crear_administrador(con, "super", "Superusuario", "super-clave-77", T0, rol="superusuario")
     otro = seg.crear_administrador(con, "beto.admin", "Beto", "otra-clave-9", T0, creado_por=admin)
     token = seg.iniciar_sesion(con, "beto.admin", "otra-clave-9", T0)
-    seg.desactivar_administrador(con, otro, T0 + 1, admin)
+    seg.desactivar_administrador(con, otro, T0 + 1, sup)
     assert seg.administrador_de_sesion(con, token, T0 + 2) is None
 
 

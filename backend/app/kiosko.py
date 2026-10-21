@@ -39,7 +39,13 @@ class Kiosko:
             return {"evento": "no-reconocida"}
         tipo, ident = persona
         if tipo == "administrador":
-            return {"evento": "administrador", "id_administrador": ident}
+            # Un administrador que también es operador registra su propia asistencia e incidencias con su huella
+            enlace = self.con.execute(
+                "SELECT a.id_operador FROM administrador a JOIN operador o ON o.id = a.id_operador AND o.activo = 1 "
+                "WHERE a.id = ? AND a.activo = 1", (ident,)).fetchone()
+            if enlace is None:
+                return {"evento": "administrador", "id_administrador": ident}
+            ident = enlace["id_operador"]
 
         op = self.con.execute("SELECT * FROM operador WHERE id = ? AND activo = 1", (ident,)).fetchone()
         if op is None:   # baja o inexistente: aunque el lector lo reconociera, no puede registrar nada

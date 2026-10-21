@@ -26,3 +26,6 @@ backups/
 
 # Documentos del cliente (contrato, capturas con datos personales): decidir antes de versionar
 docs/cliente/
+
+# Instaladores de drivers (binarios del fabricante): se guardan en la USB, no en el repositorio
+drivers/

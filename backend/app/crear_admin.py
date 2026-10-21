@@ -1,6 +1,10 @@
 """Crea el PRIMER administrador (o uno de rescate) desde la consola de la propia PC.
 
-    python -m app.crear_admin
+    python -m app.crear_admin            crea un administrador (o restablece la clave de uno existente)
+    python -m app.crear_admin --super    crea el SUPERUSUARIO: cuenta de respaldo del equipo desarrollador
+
+El superusuario no se puede crear ni desactivar desde la pantalla: solo desde aquí. Es la garantía de que ningún
+administrador pueda quedarse con el control del sistema (ni sacar a los demás).
 
 No hay usuario por defecto: en producción no existe admin/admin. Quien puede ejecutar esto ya tiene acceso
 físico y cuenta de Windows en la PC, que es la garantía de recuperación si falla el sensor o se olvida la clave.
@@ -29,8 +33,9 @@ def main() -> int:
             seguridad.bitacora(con, ahora, "sistema", None, "rescate-clave", "administrador", existe["id"], "desde consola")
             print("Contraseña restablecida.")
         else:
-            seguridad.crear_administrador(con, usuario, nombre, clave, ahora)
-            print("Administrador creado.")
+            rol = "superusuario" if "--super" in sys.argv else "administrador"
+            seguridad.crear_administrador(con, usuario, nombre, clave, ahora, rol=rol)
+            print("Superusuario creado." if rol == "superusuario" else "Administrador creado.")
     except seguridad.ErrorNegocio as e:
         print(e.mensaje)
         return 1

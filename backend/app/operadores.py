@@ -27,6 +27,13 @@ def _validar_horarios(horarios: list[dict]) -> None:
                 raise ErrorNegocio("turnos-traslapados", "Hay turnos que se traslapan el mismo día.")
 
 
+def _no_es_propio(con, actor_id: int, id_op: int) -> None:
+    """Conflicto de interés: un administrador que también es operador no puede justificarse, editarse ni darse de baja a sí mismo."""
+    f = con.execute("SELECT id_operador FROM administrador WHERE id = ?", (actor_id,)).fetchone()
+    if f and f["id_operador"] == id_op:
+        raise ErrorNegocio("conflicto-de-interes", "No puedes modificar tus propios turnos u horario: pídeselo a otro administrador o al superusuario.", 403)
+
+
 def alta_operador(con, datos: dict, horarios: list[dict], actor_id: int, ahora: int, zona: ZoneInfo) -> int:
     for campo in ("nombres", "ap_paterno", "nacimiento", "expediente"):
         if not str(datos.get(campo, "")).strip():
@@ -51,6 +58,7 @@ def alta_operador(con, datos: dict, horarios: list[dict], actor_id: int, ahora: 
 
 def cambiar_horario(con, id_op: int, horarios: list[dict], desde_fecha: str, actor_id: int, ahora: int) -> None:
     """Versiona el horario: cierra el vigente el día anterior y abre el nuevo, para no reescribir faltas pasadas."""
+    _no_es_propio(con, actor_id, id_op)
     _validar_horarios(horarios)
     abiertos = con.execute("SELECT * FROM horario WHERE id_operador = ? AND vigente_hasta IS NULL", (id_op,)).fetchall()
     if any(h["vigente_desde"] > desde_fecha for h in abiertos):
@@ -74,6 +82,7 @@ def cambiar_horario(con, id_op: int, horarios: list[dict], desde_fecha: str, act
 
 def dar_de_baja(con, id_op: int, motivo: str, actor_id: int, ahora: int) -> None:
     """La baja es inmediata (sin fecha futura). Se conserva todo 30 días y luego `purgar` lo borra."""
+    _no_es_propio(con, actor_id, id_op)
     if motivo not in MOTIVOS_BAJA:
         raise ErrorNegocio("motivo-invalido", "Elige un motivo de baja válido.")
     op = con.execute("SELECT activo FROM operador WHERE id = ?", (id_op,)).fetchone()
@@ -89,6 +98,7 @@ def dar_de_baja(con, id_op: int, motivo: str, actor_id: int, ahora: int) -> None
 
 def reingresar(con, id_op: int, actor_id: int, ahora: int) -> None:
     """Revierte una baja (error o regreso) mientras no haya pasado la purga."""
+    _no_es_propio(con, actor_id, id_op)
     baja = con.execute("SELECT id FROM periodo_baja WHERE id_operador = ? AND hasta_ts IS NULL", (id_op,)).fetchone()
     if baja is None:
         raise ErrorNegocio("no-esta-de-baja", "Ese operador no está dado de baja.", 409)
@@ -117,6 +127,7 @@ def purgar(con, ahora: int) -> list[int]:
         with transaccion(con):
             for tabla in ("huella", "registro_asistencia", "justificacion", "ajuste_estatus", "incidencia", "horario", "periodo_baja"):
                 con.execute(f"DELETE FROM {tabla} WHERE id_operador = ?", (id_op,))
+            con.execute("UPDATE administrador SET id_operador = NULL WHERE id_operador = ?", (id_op,))
             con.execute("DELETE FROM bitacora WHERE entidad = 'operador' AND entidad_id = ?", (id_op,))
             con.execute("DELETE FROM operador WHERE id = ?", (id_op,))
             bitacora(con, ahora, "sistema", None, "purga-operador", "operador", id_op, "datos eliminados")
@@ -134,6 +145,7 @@ def _fila_turno(con, id_op, fecha, id_horario, ahora, zona):
 
 
 def justificar(con, id_op, fecha, id_horario, motivo, actor_id, ahora, zona) -> None:
+    _no_es_propio(con, actor_id, id_op)
     if not motivo.strip():
         raise ErrorNegocio("motivo-obligatorio", "Escribe el motivo de la justificación.")
     fila = _fila_turno(con, id_op, fecha, id_horario, ahora, zona)
@@ -146,12 +158,14 @@ def justificar(con, id_op, fecha, id_horario, motivo, actor_id, ahora, zona) -> 
 
 
 def quitar_justificacion(con, id_op, fecha, id_horario, actor_id, ahora) -> None:
+    _no_es_propio(con, actor_id, id_op)
     with transaccion(con):
         con.execute("DELETE FROM justificacion WHERE id_operador = ? AND id_horario = ? AND fecha = ?", (id_op, id_horario, fecha))
         bitacora(con, ahora, "administrador", actor_id, "quitar-justificacion", "operador", id_op, f"{fecha} horario {id_horario}")
 
 
 def editar_estatus(con, id_op, fecha, id_horario, estado, motivo, actor_id, ahora, zona) -> None:
+    _no_es_propio(con, actor_id, id_op)
     if estado not in ("asistencia", "retardo", "falta"):
         raise ErrorNegocio("estado-invalido", "El estatus debe ser asistencia, retardo o falta.")
     _fila_turno(con, id_op, fecha, id_horario, ahora, zona)
@@ -162,6 +176,7 @@ def editar_estatus(con, id_op, fecha, id_horario, estado, motivo, actor_id, ahor
 
 
 def quitar_edicion(con, id_op, fecha, id_horario, actor_id, ahora) -> None:
+    _no_es_propio(con, actor_id, id_op)
     with transaccion(con):
         con.execute("DELETE FROM ajuste_estatus WHERE id_operador = ? AND id_horario = ? AND fecha = ?", (id_op, id_horario, fecha))
         bitacora(con, ahora, "administrador", actor_id, "quitar-edicion", "operador", id_op, f"{fecha} horario {id_horario}")
