@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manual técnico · Control Maestro TvUAQ</title>
+<link rel="stylesheet" href="manual.css">
+</head>
+<body>
+<main>
+
+<!-- ================= PORTADA ================= -->
+<section class="portada">
+  <img src="img/fractal-logo.png" alt="FRACTAL">
+  <div>
+    <p class="tipo">Manual técnico</p>
+    <h1>Control Maestro TvUAQ</h1>
+    <p class="sub">Instalación, operación, respaldos y mantenimiento</p>
+  </div>
+  <div class="pie">
+    <div><b>Para quién</b>Responsable técnico de la PC del Control Maestro y equipo de soporte.</div>
+    <div><b>Equipo FRACTAL</b>
+      <ul><li>Luis Ángel Herrera Hernández</li><li>Miguel Ángel Moreno Sánchez</li><li>María de Jesús Peña Torres</li><li>Sadoc Abisai Ubaldo Reyes</li></ul>
+    </div>
+    <div><b>Versión</b>Noviembre de 2026 · corresponde al sistema entregado.</div>
+    <div><b>Equipo destino</b>PCMaster_TvUAQ · Windows 10 x64 · lector DigitalPersona U.are.U 4500.</div>
+  </div>
+</section>
+
+<!-- ================= ÍNDICE ================= -->
+<section class="indice">
+  <h2>Contenido</h2>
+  <ol>
+    <li><span>1</span><div>Cómo está hecho el sistema</div></li>
+    <li><span>2</span><div>Requisitos</div></li>
+    <li><span>3</span><div>Contenido del kit</div></li>
+    <li><span>4</span><div>Instalación paso a paso</div></li>
+    <li><span>5</span><div>Prueba final</div></li>
+    <li><span>6</span><div>Operación diaria</div></li>
+    <li><span>7</span><div>Respaldos y restauración</div></li>
+    <li><span>8</span><div>Actualizar a una versión nueva</div></li>
+    <li><span>9</span><div>Solución de problemas</div></li>
+    <li><span>10</span><div>Configuración</div></li>
+    <li><span>11</span><div>Seguridad y datos personales</div></li>
+    <li><span>12</span><div>Para el equipo de desarrollo</div></li>
+  </ol>
+</section>
+
+<!-- ================= 1 ================= -->
+<section class="cap">
+  <h2><span class="num">CAPÍTULO 1</span>Cómo está hecho el sistema</h2>
+  <p class="lede">Una aplicación local de una sola PC: un servidor que corre en la propia computadora y una pantalla que se abre en Microsoft Edge. No usa internet.</p>
+  <table>
+    <thead><tr><th>Pieza</th><th>Qué es</th></tr></thead>
+    <tbody>
+      <tr><td>ControlMaestro.exe</td><td>El sistema: arranca el servidor (sin consola) y abre la pantalla de registro en Edge a pantalla completa. Si ya está corriendo, solo vuelve a abrir la pantalla.</td></tr>
+      <tr><td>Servidor</td><td>Python 3.15 + FastAPI, empaquetado con PyInstaller (no hay que instalar Python). Escucha <b>solo</b> en <code>127.0.0.1:8765</code>: nada fuera de la PC puede conectarse.</td></tr>
+      <tr><td>Base de datos</td><td>SQLite en un solo archivo: <code>C:\ControlMaestro\data\tvuaq.db</code> (modo WAL, escritura sincronizada para resistir apagones).</td></tr>
+      <tr><td>Lector</td><td>DigitalPersona U.are.U 4500 con el driver <b>WBF</b>, a través de Windows Biometric Framework (WinBio), con una base privada de huellas solo para este sistema.</td></tr>
+      <tr><td>Pantallas</td><td>HTML, CSS y JavaScript sin dependencias externas: pantalla de registro (<code>/</code>) y administración (<code>/admin.html</code>).</td></tr>
+      <tr><td>Reportes PDF</td><td>Los genera el servidor con ReportLab en hoja membretada (provisional hasta tener la oficial).</td></tr>
+    </tbody>
+  </table>
+  <h3>Dónde vive cada cosa</h3>
+<pre>C:\ControlMaestro\
+    ControlMaestro.exe            sistema (pantalla + servidor)
+    ControlMaestroConsola.exe     herramientas de instalación y mantenimiento
+    _internal\                    librerías (no tocar)
+    data\                         TODA la información (se crea sola)
+        tvuaq.db                  base de datos
+        winbio_config.json        configuración del lector
+        registro\servidor.log     bitácora técnica (rota a 1 MB, 5 archivos)
+        edge-pantalla\            perfil de Edge de la pantalla
+    backups\                      respaldos locales</pre>
+  <div class="importante"><b class="t">No borrar ni mover</b><p><code>data\tvuaq.db</code> (toda la información) ni <code>data\winbio_config.json</code> (configuración del lector).</p></div>
+</section>
+
+<!-- ================= 2 ================= -->
+<section class="cap">
+  <h2><span class="num">CAPÍTULO 2</span>Requisitos</h2>
+  <table>
+    <tbody>
+      <tr><td>Equipo</td><td>Windows 10 de 64 bits (PCMaster_TvUAQ: i7-4790, 12 GB de RAM, disco mecánico).</td></tr>
+      <tr><td>Lector</td><td>DigitalPersona U.are.U 4500 conectado por USB.</td></tr>
+      <tr><td>Navegador</td><td>Microsoft Edge (incluido en Windows 10).</td></tr>
+      <tr><td>Permisos</td><td>Una cuenta de Windows con permisos de administrador para instalar el driver y configurar el lector.</td></tr>
+      <tr><td>Hora</td><td>Zona horaria <b>(UTC-06:00) Guadalajara, Ciudad de México, Monterrey</b> y la hora correcta: las asistencias se calculan con la hora de la PC.</td></tr>
+      <tr><td>Internet</td><td>No hace falta.</td></tr>
+    </tbody>
+  </table>
+  <div class="nota"><b class="t">Antes de instalar</b><p>Si alguna vez se instaló el <b>SDK de HID</b> o el driver <b>«Non-WBF» / legacy</b> del lector, desinstálalos (<i>Panel de control → Programas</i>) y reinicia. El sistema usa el driver WBF.</p></div>
+</section>
+
+<!-- ================= 3 ================= -->
+<section class="cap">
+  <h2><span class="num">CAPÍTULO 3</span>Contenido del kit</h2>
+  <p class="lede">La carpeta <code>ControlMaestro</code> (unos 80 MB) que se entrega en una memoria USB.</p>
+  <table>
+    <thead><tr><th>Archivo</th><th>Para qué</th></tr></thead>
+    <tbody>
+      <tr><td>1_Instalar_driver_del_lector.bat</td><td>Abre el instalador del driver WBF (una sola vez).</td></tr>
+      <tr><td>2_Configurar_lector.bat</td><td>Crea la base privada de huellas del sistema (pide permisos de administrador; una sola vez).</td></tr>
+      <tr><td>3_Revisar_lector.bat</td><td>Diagnóstico del lector y prueba de una huella ya registrada.</td></tr>
+      <tr><td>4_Crear_administrador.bat</td><td>Crea el administrador del Control Maestro, o restablece su contraseña si el usuario ya existe.</td></tr>
+      <tr><td>5_Crear_superusuario.bat</td><td>Crea el superusuario (cuenta de respaldo del equipo desarrollador).</td></tr>
+      <tr><td>6_Inicio_automatico.bat</td><td>Crea el acceso directo «Control Maestro» en el Escritorio y en la carpeta Inicio de Windows.</td></tr>
+      <tr><td>Respaldar_ahora.bat</td><td>Respaldo inmediato (local y USB).</td></tr>
+      <tr><td>Restaurar_respaldo.bat</td><td>Cierra el sistema, lista los respaldos y restaura el elegido.</td></tr>
+      <tr><td>Detener_Control_Maestro.bat</td><td>Detiene el servidor y la pantalla.</td></tr>
+      <tr><td>driver_lector_WBF\</td><td>Instalador del driver del lector.</td></tr>
+      <tr><td>GUIA_DE_INSTALACION.md</td><td>Guía de instalación (se abre con el Bloc de notas).</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ================= 4 ================= -->
+<section class="cap">
+  <h2><span class="num">CAPÍTULO 4</span>Instalación paso a paso</h2>
+  <p class="lede">Tiempo aproximado: 45 minutos. Con una cuenta de Windows con permisos de administrador.</p>
+  <ol class="pasos">
+    <li><b>Copiar el sistema.</b> Copia la carpeta del kit completa a <code>C:\ControlMaestro\</code>. Si viene en un ZIP, descomprímelo antes de abrir nada. Debe quedar <code>C:\ControlMaestro\ControlMaestro.exe</code>, sin carpeta doble (<code>C:\ControlMaestro\ControlMaestro\</code>). No la pongas en <i>Archivos de programa</i>: ahí Windows no deja guardar la base de datos.</li>
+    <li><b>Driver del lector.</b> Doble clic en <code>1_Instalar_driver_del_lector.bat</code>, acepta todo y <b>reinicia la computadora</b>. Comprueba en <i>Administrador de dispositivos → Dispositivos biométricos</i> que el lector aparezca sin advertencias.</li>
+    <li><b>Configurar el lector.</b> Doble clic en <code>2_Configurar_lector.bat</code> y acepta el permiso de administrador. Debe decir <b>«Base privada creada»</b>. Después desconecta el lector y vuelve a conectarlo. Así se crea una base de huellas solo para este sistema, separada de Windows Hello; nunca se guardan imágenes.</li>
+    <li><b>Revisar el lector.</b> Doble clic en <code>3_Revisar_lector.bat</code>: debe aparecer el lector y ningún «Error».</li>
+    <li><b>Administradores.</b> <code>4_Crear_administrador.bat</code> para el administrador del Control Maestro (contraseña de al menos 8 caracteres; no hay usuario por defecto) y <code>5_Crear_superusuario.bat</code> para la cuenta de respaldo del equipo.</li>
+    <li><b>Inicio automático.</b> Doble clic en <code>6_Inicio_automatico.bat</code>. Desde ahora, al iniciar sesión se abre sola la pantalla en Edge a pantalla completa. Ábrelo ahora con el acceso directo <b>Control Maestro</b> del Escritorio.</li>
+    <li><b>Registrar al personal.</b> En la pantalla, <b>Administración</b> → entra con el usuario del paso 5. Registra la huella de cada administrador (<i>Administradores → Huella</i>) y da de alta a cada operador con su horario y su huella (ver el manual de usuario).</li>
+  </ol>
+  <div class="nota"><b class="t">Recomendado para los apagones</b><p>Inicio de sesión automático en Windows (<code>netplwiz</code> → desmarcar «Los usuarios deben escribir su nombre…») y, en la BIOS, <i>Restore on AC Power Loss = Power On</i>. Así la PC enciende sola al volver la luz y el sistema se abre solo.</p></div>
+  <h3>Situaciones especiales al configurar el lector</h3>
+  <table class="libre">
+    <tbody>
+      <tr><td><b>«Huella duplicada» al registrar</b></td><td>Ese dedo ya estaba en la base del lector (por ejemplo, de pruebas anteriores). Para empezar limpio: consola como administrador en <code>C:\ControlMaestro</code>, <code>ControlMaestroConsola.exe lector quitar</code> y otra vez <code>2_Configurar_lector.bat</code>.</td></tr>
+      <tr><td><b>«Acceso denegado»</b></td><td>En <code>regedit</code>: <code>HKLM\SYSTEM\CurrentControlSet\Enum\&lt;ruta del lector&gt;\Device Parameters\WinBio</code> → clic derecho → <i>Permisos</i> → <i>Control total</i> para Administradores, y repetir el paso 3.</td></tr>
+      <tr><td><b>«Es de otra instalación»</b></td><td>La carpeta vino de otra PC. Vuelve a correr <code>2_Configurar_lector.bat</code>: crea una base nueva.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ================= 5 ================= -->
+<section class="cap">
+  <h2><span class="num">CAPÍTULO 5</span>Prueba final</h2>
+  <p class="lede">Antes de entregar, comprobar en la PC:</p>
+  <table>
+    <thead><tr><th>Prueba</th><th>Resultado esperado</th></tr></thead>
+    <tbody>
+      <tr><td>Entrada</td><td>Botón Entrada → dedo → «Registro de entrada con éxito a las…».</td></tr>
+      <tr><td>Salida antes de la hora</td><td>Pregunta «Te faltan … ¿Estás seguro…?». Pulsar Cancelar.</td></tr>
+      <tr><td>Salida sin entrada</td><td>Con otra persona: mensaje de error «No tienes una entrada registrada».</td></tr>
+      <tr><td>Incidencia</td><td>Llenar el formulario → dedo → «Incidencia registrada».</td></tr>
+      <tr><td>PDF</td><td><i>Administración → Tabla de asistencias → Generar PDF</i>: se ve la hoja membretada y se imprime.</td></tr>
+      <tr><td>Respaldo</td><td><i>Administración → Respaldos → Respaldar ahora</i>: «Verificado».</td></tr>
+      <tr><td>Foco del lector</td><td>Con Edge al frente a pantalla completa, la huella se reconoce.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ================= 6 ================= -->
+<section class="cap">
+  <h2><span class="num">CAPÍTULO 6</span>Operación diaria</h2>
+  <table>
+    <thead><tr><th>Qué</th><th>Cómo</th></tr></thead>
+    <tbody>
+      <tr><td>Abrir la pantalla</td><td>Acceso directo <b>Control Maestro</b> del Escritorio (se abre sola al iniciar sesión).</td></tr>
+      <tr><td>Cerrar la pantalla</td><td>Botón <b>Salir</b> → <i>Cerrar pantalla</i>. También <kbd>F11</kbd> (ventana normal con su X) o <kbd>Alt</kbd>+<kbd>F4</kbd>. El sistema sigue corriendo.</td></tr>
+      <tr><td>Detener todo</td><td><code>Detener_Control_Maestro.bat</code>.</td></tr>
+      <tr><td>Abrir a mano</td><td>En Edge: <code>http://127.0.0.1:8765/</code> (registro) y <code>/admin.html</code> (administración).</td></tr>
+      <tr><td>Bitácora técnica</td><td><code>C:\ControlMaestro\data\registro\servidor.log</code> (arranque y errores del lector). Los registros de asistencia, incidencias y cambios quedan en la base de datos.</td></tr>
+      <tr><td>Borrar o volver a registrar huellas</td><td><i>Administración → Operadores → Datos → Borrar huellas</i>.</td></tr>
+      <tr><td>Contraseña olvidada</td><td>El superusuario la restablece en <i>Administradores</i>, o en la PC: <code>4_Crear_administrador.bat</code> con el mismo usuario.</td></tr>
+    </tbody>
+  </table>
+  <h3>Herramientas de consola</h3>
+  <p>En una consola dentro de <code>C:\ControlMaestro</code>: <code>ControlMaestroConsola.exe &lt;comando&gt;</code></p>
+  <table>
+    <thead><tr><th>Comando</th><th>Para qué</th></tr></thead>
+    <tbody>
+      <tr><td>iniciar [--ventana]</td><td>Servidor y pantalla (lo que hace ControlMaestro.exe); <code>--ventana</code> sin pantalla completa.</td></tr>
+      <tr><td>servidor [--puerto N]</td><td>Solo el servidor.</td></tr>
+      <tr><td>crear-admin [--super]</td><td>Crear administrador o superusuario, o restablecer una contraseña.</td></tr>
+      <tr><td>respaldar</td><td>Respaldo inmediato (local y USB).</td></tr>
+      <tr><td>restaurar [archivo | --lista]</td><td>Restaurar un respaldo (con el sistema apagado).</td></tr>
+      <tr><td>lector configurar | quitar | diagnostico | probar</td><td>Herramientas del lector de huellas.</td></tr>
+      <tr><td>demo [--reiniciar]</td><td>Base ficticia de demostración (<code>data\demo.db</code>), separada de la real.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ================= 7 ================= -->
+<section class="cap">
+  <h2><span class="num">CAPÍTULO 7</span>Respaldos y restauración</h2>
+  <p class="lede">Cada copia se hace con la API de respaldo de SQLite (sin detener el sistema) y se verifica antes de darla por buena.</p>
+  <table>
+    <tbody>
+      <tr><td>Automático</td><td>Cada madrugada, y al encender si pasó más de un día.</td></tr>
+      <tr><td>Manual</td><td><i>Administración → Respaldos → Respaldar ahora</i> o <code>Respaldar_ahora.bat</code>.</td></tr>
+      <tr><td>Dónde</td><td><code>C:\ControlMaestro\backups\</code> y, si está configurada, la memoria USB. Archivos <code>tvuaq-AAAAMMDD-HHMMSS.db</code>.</td></tr>
+      <tr><td>Cuántos</td><td>7 diarios y 4 semanales (unas 4 semanas), a propósito: los datos de una persona dada de baja no deben quedarse guardados por meses.</td></tr>
+    </tbody>
+  </table>
+  <h3>Configurar la memoria USB (una vez)</h3>
+  <ol class="pasos">
+    <li>Conecta la USB y anota su letra (por ejemplo <code>E:</code>).</li>
+    <li>En una consola: <code>setx TVUAQ_RESPALDO_USB E:\TvUAQ</code></li>
+    <li>Cierra sesión y vuelve a entrar. Desde ahora cada respaldo también va a la USB; si no está conectada, solo se avisa en <i>Respaldos</i>.</li>
+  </ol>
+  <div class="nota"><b class="t">Protección</b><p>La USB tiene datos personales: protégela con BitLocker To Go y define quién la resguarda.</p></div>
+  <h3>Restaurar un respaldo</h3>
+  <ol class="pasos">
+    <li>Doble clic en <code>Restaurar_respaldo.bat</code>: cierra el sistema y lista los respaldos disponibles.</li>
+    <li>Copia la ruta completa del respaldo que quieres y pégala; Enter vacío cancela.</li>
+    <li>La base anterior queda guardada aparte. Abre de nuevo con el acceso directo <b>Control Maestro</b>.</li>
+  </ol>
+</section>
+
+<!-- ================= 8 ================= -->
+<section class="cap">
+  <h2><span class="num">CAPÍTULO 8</span>Actualizar a una versión nueva</h2>
+  <p class="lede">El sistema solo guarda información en <code>data\</code> y <code>backups\</code>. Actualizar es cambiar todo lo demás sin tocar esas dos carpetas.</p>
+  <ol class="pasos">
+    <li><b>Respaldo</b>: <i>Respaldar ahora</i>; debe decir «Verificado».</li>
+    <li><b>Detener</b>: botón Salir y luego <code>Detener_Control_Maestro.bat</code>.</li>
+    <li><b>Copia de la versión actual</b>: copia <code>C:\ControlMaestro</code> completa a <code>C:\ControlMaestro_anterior_AAAAMMDD</code>.</li>
+    <li>En <code>C:\ControlMaestro</code>, <b>borra</b> los dos <code>.exe</code>, <code>_internal\</code>, los <code>.bat</code>, <code>driver_lector_WBF\</code> y la guía. <b>No toques <code>data\</code> ni <code>backups\</code>.</b></li>
+    <li><b>Copia</b> todo lo del kit nuevo. Si el kit trae una carpeta <code>data\</code>, <b>no la copies</b>.</li>
+    <li><b>Abre</b> con el acceso directo. Si la versión nueva cambia la base, la actualiza sola.</li>
+    <li><b>Prueba</b>: una entrada con huella, entrar a Administración y revisar que <code>servidor.log</code> no tenga errores nuevos.</li>
+  </ol>
+  <div class="importante"><b class="t">Si algo falla</b><p><code>Detener_Control_Maestro.bat</code>, borra <code>C:\ControlMaestro</code> y renombra la copia anterior a <code>C:\ControlMaestro</code>. Se pierde lo registrado desde la actualización, y la versión anterior no abre una base ya actualizada: por eso la prueba va enseguida. Cuando la nueva lleve unos días bien, borra la copia anterior (tiene datos personales).</p></div>
+</section>
+
+<!-- ================= 9 ================= -->
+<section class="cap">
+  <h2><span class="num">CAPÍTULO 9</span>Solución de problemas</h2>
+  <table>
+    <thead><tr><th>Síntoma</th><th>Qué hacer</th></tr></thead>
+    <tbody>
+      <tr><td>Pantalla: «El lector de huellas no responde»</td><td>Desconecta el lector, espera 5 s y conéctalo. Si sigue: <code>3_Revisar_lector.bat</code> y reinicia la PC. Si se repite, el log dirá «falla del lector».</td></tr>
+      <tr><td>Pantalla: «Sin conexión con el sistema»</td><td>El servidor no está corriendo: abre el acceso directo <b>Control Maestro</b>. Si se repite, revisa <code>servidor.log</code>.</td></tr>
+      <tr><td>«Huella no reconocida»</td><td>Dedo limpio, plano y centrado; el mismo con que se registró. Si sigue, borrar sus huellas y registrarlas de nuevo.</td></tr>
+      <tr><td>«Esa huella ya está registrada en el lector»</td><td>Usa otro dedo, o empieza con una base limpia (capítulo 4).</td></tr>
+      <tr><td>«El lector está ocupado» por mucho tiempo</td><td>Se quedó abierto un registro de huella en la administración: pulsa Cancelar ahí (el registro se cancela solo a los 90 s).</td></tr>
+      <tr><td>La pantalla no abre</td><td>Comprueba que Edge esté instalado. Ábrela a mano: <code>http://127.0.0.1:8765/</code>.</td></tr>
+      <tr><td>Las horas salen corridas</td><td>Revisa la zona horaria y la hora de Windows (capítulo 2).</td></tr>
+      <tr><td>Aviso «USB no conectada» en Respaldos</td><td>Conecta la USB con la misma letra configurada y pulsa <i>Respaldar ahora</i>.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ================= 10 ================= -->
+<section class="cap">
+  <h2><span class="num">CAPÍTULO 10</span>Configuración</h2>
+  <h3>Reglas de asistencia</h3>
+  <p>Viven en la tabla <code>configuracion</code> de la base de datos. Se cambian solo después de confirmarlo por escrito con el responsable del Control Maestro, y con un respaldo previo.</p>
+  <table>
+    <thead><tr><th>Clave</th><th>Valor</th><th>Qué controla</th></tr></thead>
+    <tbody>
+      <tr><td>tolerancia_retardo_min</td><td>15</td><td>Minutos después de la hora de entrada a partir de los cuales hay retardo.</td></tr>
+      <tr><td>tolerancia_salida_min</td><td>3</td><td>Minutos antes del fin del turno en que se puede salir sin pedir confirmación.</td></tr>
+      <tr><td>anticipo_entrada_min</td><td>60</td><td>Desde cuántos minutos antes del turno se acepta la entrada.</td></tr>
+      <tr><td>rebote_seg</td><td>15</td><td>Dos lecturas de la misma persona en menos de este tiempo cuentan como una.</td></tr>
+      <tr><td>gracia_sin_salida_min</td><td>120</td><td>Margen después del fin del turno en que la entrada sigue abierta; después queda «sin salida».</td></tr>
+      <tr><td>vigencia_fuera_horario_min</td><td>720</td><td>Cuánto sigue abierta una entrada fuera de horario.</td></tr>
+      <tr><td>espera_huella_s</td><td>20</td><td>Segundos que la pantalla espera la huella después de pulsar Entrada o Salida.</td></tr>
+      <tr><td>max_huellas_persona</td><td>2</td><td>Huellas por persona.</td></tr>
+      <tr><td>dias_purga_baja</td><td>30</td><td>Días que se conservan los datos de una persona dada de baja.</td></tr>
+    </tbody>
+  </table>
+  <h3>Variables de entorno</h3>
+  <table>
+    <thead><tr><th>Variable</th><th>Para qué</th><th>Por defecto</th></tr></thead>
+    <tbody>
+      <tr><td>TVUAQ_RESPALDO_USB</td><td>Carpeta de respaldos en la memoria USB</td><td>(sin USB)</td></tr>
+      <tr><td>TVUAQ_RESPALDO_LOCAL</td><td>Carpeta de respaldos en la PC</td><td><code>C:\ControlMaestro\backups</code></td></tr>
+      <tr><td>TVUAQ_DATOS</td><td>Carpeta de datos</td><td><code>C:\ControlMaestro</code></td></tr>
+      <tr><td>TVUAQ_PUERTO</td><td>Puerto local</td><td>8765</td></tr>
+      <tr><td>TVUAQ_LECTOR_FOCO</td><td><code>no</code> / <code>consola</code> (solo para diagnóstico del foco de WinBio)</td><td>no</td></tr>
+      <tr><td>TVUAQ_SIMULADOR</td><td>1 = lector simulado y modo demostración</td><td><b>0 en producción</b></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ================= 11 ================= -->
+<section class="cap">
+  <h2><span class="num">CAPÍTULO 11</span>Seguridad y datos personales</h2>
+  <table class="libre">
+    <tbody>
+      <tr><td><b>Red</b></td><td>El servidor solo atiende desde la propia PC (<code>127.0.0.1</code>) y rechaza peticiones de otros orígenes. No habilites Escritorio remoto ni carpetas compartidas.</td></tr>
+      <tr><td><b>Contraseñas</b></td><td>Se guardan con <i>scrypt</i>, nunca en claro. Mínimo 8 caracteres; se rechazan las triviales.</td></tr>
+      <tr><td><b>Sesiones</b></td><td>Caducan a los 30 minutos sin uso; bloqueo de 5 minutos tras 5 intentos fallidos.</td></tr>
+      <tr><td><b>Roles</b></td><td>Operador, administrador y superusuario. Los permisos se revisan en el servidor, no solo en la pantalla.</td></tr>
+      <tr><td><b>Huellas</b></td><td>Las plantillas quedan en la base privada de WinBio de la PC; en la base del sistema solo su identificador. No se guardan imágenes y no salen de la PC.</td></tr>
+      <tr><td><b>Aviso de privacidad</b></td><td>La persona debe aceptarlo antes de registrar su huella. El texto actual es <b>provisional</b>: el oficial lo debe dar la UAQ.</td></tr>
+      <tr><td><b>Bajas</b></td><td>A los 30 días se borran datos, huella e historial de la persona (revisión automática cada hora); solo queda una línea en la bitácora sin datos personales.</td></tr>
+      <tr><td><b>Bitácora</b></td><td>Inicios de sesión, cambios de horario, justificaciones, ediciones, bajas, respaldos y PDF generados quedan registrados.</td></tr>
+      <tr><td><b>Windows 10</b></td><td>Terminó su soporte gratuito en octubre de 2025: mantener la PC sin servicios expuestos y con el antivirus de Windows activo.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ================= 12 ================= -->
+<section class="cap">
+  <h2><span class="num">CAPÍTULO 12</span>Para el equipo de desarrollo</h2>
+  <h3>Estructura del código</h3>
+<pre>control_maestro/
+    app/          servidor FastAPI: api/ (rutas), db/ (esquema), reglas/ (reglas de turnos),
+                  biometria/ (adaptador del lector), reportes/ (reportes y PDF)
+    lector/       lógica del lector WinBio
+    web/          pantallas HTML/CSS/JS sin frameworks, con fuentes locales
+    tests/        pruebas del sistema y del lector
+    scripts/      demostración, arranque y construcción del kit en Windows
+    empaquetado/  receta de PyInstaller (--onedir)
+    docs/         instalación, pendientes y documentación del lector
+    externos/     driver WBF e instalador de Python 3.15.1 (fuera de git)</pre>
+  <ul>
+    <li>Las reglas de negocio existen <b>solo</b> en <code>app/reglas/</code>; las pantallas y los PDF usan los mismos datos del servidor.</li>
+    <li>Desarrollo con lector simulado: <code>./scripts/demo.sh reiniciar</code> (usuario <code>demo</code>). Pruebas: <code>python -m pytest</code>.</li>
+  </ul>
+  <h3>Construir el kit</h3>
+  <ol class="pasos">
+    <li>En una VM con Windows 10 x64, instala Python 3.15.1 de 64 bits (<code>externos\python-3.15.1-amd64.exe</code>, marcando <i>Add python.exe to PATH</i>).</li>
+    <li>Desde la carpeta del proyecto: <code>powershell -ExecutionPolicy Bypass -File scripts\windows\construir.ps1</code> (instala dependencias, corre las pruebas, construye y arma <code>dist\ControlMaestro\</code>).</li>
+    <li>Sin internet en la VM: antes, en otra PC, <code>scripts\windows\descargar_paquetes.ps1</code> deja los paquetes en <code>vendor\wheels\</code>.</li>
+    <li>Antes de copiar el kit, revisa que <code>dist\ControlMaestro\</code> <b>no tenga <code>data\</code></b> (se crea si se abrió el <code>.exe</code> para probarlo).</li>
+  </ol>
+  <div class="importante"><b class="t">Cuidado</b><p>PyInstaller borra <code>dist\ControlMaestro\</code> completo al reconstruir, incluida su <code>data\</code>.</p></div>
+  <h3>Dependencias fijas</h3>
+  <p>Versiones exactas en <code>requirements.txt</code> y <code>constraints.txt</code> (FastAPI 0.156.4, Starlette 1.9.0, Pydantic 2.14.1, Uvicorn 0.54.0, ReportLab 5.1.0, Pillow 13.0.0). Solo se cambian a propósito y con las pruebas en verde.</p>
+</section>
+
+</main>
+</body>
+</html>

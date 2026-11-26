@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Manual de usuario · Control Maestro TvUAQ</title>
+<link rel="stylesheet" href="manual.css">
+</head>
+<body>
+<main>
+
+<!-- ================= PORTADA ================= -->
+<section class="portada">
+  <img src="img/fractal-logo.png" alt="FRACTAL">
+  <div>
+    <p class="tipo">Manual de usuario</p>
+    <h1>Control Maestro TvUAQ</h1>
+    <p class="sub">Sistema de registro de asistencia e incidencias</p>
+  </div>
+  <div class="pie">
+    <div><b>Para quién</b>Personal operador y administradores del Control Maestro de TvUAQ, Universidad Autónoma de Querétaro.</div>
+    <div><b>Equipo FRACTAL</b>
+      <ul><li>Luis Ángel Herrera Hernández</li><li>Miguel Ángel Moreno Sánchez</li><li>María de Jesús Peña Torres</li><li>Sadoc Abisai Ubaldo Reyes</li></ul>
+    </div>
+    <div><b>Versión</b>Noviembre de 2026 · corresponde al sistema entregado.</div>
+    <div><b>Nota</b>Las capturas usan datos ficticios de demostración.</div>
+  </div>
+</section>
+
+<!-- ================= ÍNDICE ================= -->
+<section class="indice">
+  <h2>Contenido</h2>
+  <ol>
+    <li><span>1</span><div>El sistema en un vistazo</div></li>
+    <li><span>2</span><div>Pantalla de registro (personal operador)<ul><li>Entrada · Salida · Mensajes · Incidencias</li></ul></div></li>
+    <li><span>3</span><div>Entrar a la administración</div></li>
+    <li><span>4</span><div>Operadores<ul><li>Alta · Huella · Datos · Horarios · Baja y reingreso</li></ul></div></li>
+    <li><span>5</span><div>Reportes<ul><li>Registro del día · Tabla de asistencias · Reporte individual · Incidencias · PDF</li></ul></div></li>
+    <li><span>6</span><div>Justificar y editar un turno</div></li>
+    <li><span>7</span><div>Administradores</div></li>
+    <li><span>8</span><div>Respaldos</div></li>
+    <li><span>9</span><div>Cómo se calcula la asistencia</div></li>
+    <li><span>10</span><div>Preguntas frecuentes</div></li>
+  </ol>
+</section>
+
+<!-- ================= 1 ================= -->
+<section class="cap">
+  <h2><span class="num">CAPÍTULO 1</span>El sistema en un vistazo</h2>
+  <p class="lede">El sistema registra con huella digital la entrada y la salida del personal operador y las incidencias de cada turno, y calcula solo las asistencias, faltas, retardos y el tiempo por cumplir.</p>
+  <p>Funciona en la computadora del Control Maestro, <b>sin internet</b>, y tiene dos partes:</p>
+  <table>
+    <thead><tr><th>Parte</th><th>Quién la usa</th><th>Para qué</th></tr></thead>
+    <tbody>
+      <tr><td>Pantalla de registro</td><td>Todo el personal operador</td><td>Registrar entrada, salida e incidencias con la huella. Está siempre abierta.</td></tr>
+      <tr><td>Administración</td><td>Solo administradores</td><td>Dar de alta al personal y sus horarios, consultar reportes, generar PDF, justificar faltas y revisar los respaldos.</td></tr>
+    </tbody>
+  </table>
+  <figure>
+    <img src="img/op-01-pantalla-completa.jpg" alt="Pantalla de registro">
+    <figcaption>Figura 1. Pantalla de registro. Arriba a la derecha están los botones Administración y Salir.</figcaption>
+  </figure>
+  <div class="nota"><b class="t">Lector de huellas</b><p>El lector identifica a la persona. La pantalla nunca pregunta el nombre: el registro siempre queda a nombre de quien puso el dedo.</p></div>
+</section>
+
+<!-- ================= 2 ================= -->
+<section class="cap">
+  <h2><span class="num">CAPÍTULO 2</span>Pantalla de registro</h2>
+  <p class="lede">Para el personal operador. Tres botones: <b>Entrada</b>, <b>Salida</b> y <b>Registrar incidencia</b>.</p>
+
+  <h3>Registrar tu entrada</h3>
+  <ol class="pasos">
+    <li>Pulsa el botón <b>Entrada</b>.</li>
+    <li>La pantalla dice «Coloca tu dedo para registrar tu entrada» y cuenta <b>20 segundos</b>. Pon el dedo en el lector.</li>
+    <li>Aparece un mensaje grande con la hora exacta y si llegaste a tiempo o tarde. Se cierra solo o con <b>Aceptar</b>.</li>
+  </ol>
+  <div class="par">
+    <figure><img src="img/op-02-espera-huella.jpg" alt="Esperando la huella"><figcaption>Figura 2. Esperando la huella.</figcaption></figure>
+    <figure><img src="img/op-03-entrada-a-tiempo.jpg" alt="Entrada a tiempo"><figcaption>Figura 3. Entrada registrada a tiempo.</figcaption></figure>
+  </div>
+  <p>Si te equivocaste de botón, pulsa <b>Cancelar</b> (o la tecla <kbd>Esc</kbd>). Si no pones el dedo en 20 segundos, la pantalla vuelve sola al inicio.</p>
+
+  <h3>Registrar tu salida</h3>
+  <ol class="pasos">
+    <li>Pulsa <b>Salida</b> y pon el dedo.</li>
+    <li>Aparece «Registro de salida con éxito», cuánto tiempo estuviste en turno y, si fue el caso, cuánto te faltó.</li>
+  </ol>
+  <p>Si sales <b>más de 3 minutos antes</b> de la hora de salida, la pantalla pregunta «Aún no termina tu turno. Te faltan … para salir. ¿Estás seguro…?». Elige <b>Registrar salida</b> para confirmar o <b>Cancelar</b> para seguir en turno.</p>
+  <div class="par">
+    <figure><img src="img/op-05-confirmar-salida.jpg" alt="Confirmar salida anticipada"><figcaption>Figura 4. Salida antes de tiempo: se pide confirmar.</figcaption></figure>
+    <figure><img src="img/op-06-salida-registrada.jpg" alt="Salida registrada"><figcaption>Figura 5. Salida registrada con el tiempo en turno.</figcaption></figure>
+  </div>
+
+  <h3>Mensajes que pueden aparecer</h3>
+  <table>
+    <thead><tr><th>Mensaje</th><th>Qué significa</th><th>Qué hacer</th></tr></thead>
+    <tbody>
+      <tr><td>Llegaste a tiempo</td><td>Entrada dentro de los 15 minutos de tolerancia.</td><td>Nada.</td></tr>
+      <tr><td>Llegaste tarde · N min…</td><td>Entrada más de 15 minutos después de tu hora. La entrada sí se guarda.</td><td>Nada; queda como retardo.</td></tr>
+      <tr><td>Fuera de horario</td><td>No tienes un turno programado a esta hora.</td><td>Se guarda aparte. Si es un error de horario, avisa al administrador.</td></tr>
+      <tr><td>Ya tienes una entrada registrada</td><td>Pulsaste Entrada y ya habías entrado.</td><td>Para terminar tu turno pulsa <b>Salida</b>.</td></tr>
+      <tr><td>No tienes una entrada registrada</td><td>Pulsaste Salida sin haber registrado tu entrada.</td><td>Avisa al administrador.</td></tr>
+      <tr><td>Primero pulsa Entrada o Salida</td><td>Pusiste el dedo sin elegir qué registrar.</td><td>Pulsa el botón y vuelve a poner el dedo.</td></tr>
+      <tr><td>Huella no reconocida</td><td>El lector no identificó la huella.</td><td>Limpia el dedo, colócalo plano y centrado e intenta de nuevo (el botón sigue pulsado).</td></tr>
+      <tr><td>Tu registro ya quedó guardado</td><td>Pusiste el dedo dos veces seguidas (menos de 15 s).</td><td>Nada: solo cuenta una vez.</td></tr>
+      <tr><td>Huella de administrador</td><td>Las huellas de administración no registran asistencia (salvo que la persona también sea operadora).</td><td>Para administrar, usa el botón <b>Administración</b>.</td></tr>
+      <tr><td>El lector está ocupado</td><td>Se está registrando una huella desde la administración.</td><td>Espera un momento.</td></tr>
+      <tr><td>El lector de huellas no responde</td><td>El lector se desconectó o falló.</td><td>Avisa al administrador y anota tu entrada o salida por escrito mientras tanto.</td></tr>
+      <tr><td>Sin conexión con el sistema</td><td>El programa se está reiniciando o se detuvo.</td><td>Espera; se reconecta solo. Si tarda, avisa al administrador.</td></tr>
+    </tbody>
+  </table>
+  <div class="par">
+    <figure><img src="img/op-04-entrada-retardo.jpg" alt="Entrada con retardo"><figcaption>Figura 6. Entrada con retardo.</figcaption></figure>
+    <figure><img src="img/op-07-salida-sin-entrada.jpg" alt="Salida sin entrada"><figcaption>Figura 7. Salida sin haber registrado entrada.</figcaption></figure>
+  </div>
+
+  <h3>Registrar una incidencia</h3>
+  <ol class="pasos">
+    <li>Pulsa <b>Registrar incidencia</b>. La fecha y hora de registro se guardan solas.</li>
+    <li>Llena la <b>hora de la incidencia</b>, el <b>tipo</b> y la <b>observación</b> (obligatorios). El <b>programa</b> es opcional. Algunos tipos piden también la <b>duración</b> en horas y minutos.</li>
+    <li>Cuando el formulario está completo aparece en verde «Listo. Coloca tu huella en el sensor…». Pon el dedo: tu huella firma la incidencia.</li>
+  </ol>
+  <figure class="chica"><img src="img/op-09-incidencia-formulario.jpg" alt="Formulario de incidencia"><figcaption>Figura 8. Formulario listo para firmarse con la huella.</figcaption></figure>
+  <table>
+    <thead><tr><th>Tipo de incidencia</th><th>¿Pide duración?</th></tr></thead>
+    <tbody>
+      <tr><td>Corte de Energía CFE</td><td>Sí</td></tr>
+      <tr><td>Falla en el sistema de Energía interno</td><td>Sí</td></tr>
+      <tr><td>Falla de equipo</td><td>Sí</td></tr>
+      <tr><td>Sustitución de pauta RTC</td><td>No</td></tr>
+      <tr><td>Sustitución de pauta INE</td><td>No</td></tr>
+      <tr><td>Ajuste de programación</td><td>No</td></tr>
+      <tr><td>Falla de programa o videoclip</td><td>Sí</td></tr>
+      <tr><td>Otro</td><td>Sí</td></tr>
+    </tbody>
+  </table>
+  <div class="nota"><b class="t">Importante</b><p>Con el formulario de incidencia abierto, una huella nunca cuenta como entrada o salida. Si falta un dato, el formulario lo marca y pide volver a poner el dedo.</p></div>
+
+  <h3>Otros elementos de la pantalla</h3>
+  <p><b>En turno ahora</b> (a la derecha) muestra quién registró su entrada y hasta qué hora es su turno. El botón <b>Salir</b> cierra la pantalla sin detener el sistema; para volver a abrirla se usa el acceso directo <b>Control Maestro</b> del Escritorio.</p>
+</section>
+
+<!-- ================= 3 ================= -->
+<section class="cap">
+  <h2><span class="num">CAPÍTULO 3</span>Entrar a la administración</h2>
+  <p class="lede">En la pantalla de registro, botón <b>Administración</b> (arriba a la derecha).</p>
+  <ol class="pasos">
+    <li><b>Con huella</b>: pon el dedo en el lector; la pantalla de acceso lo espera sola.</li>
+    <li><b>Con usuario y contraseña</b>: abre «Ingresar con usuario y contraseña», escribe tus datos y pulsa <b>Entrar</b>.</li>
+  </ol>
+  <figure class="chica"><img src="img/ad-01-acceso.jpg" alt="Acceso administrativo"><figcaption>Figura 9. Acceso administrativo.</figcaption></figure>
+  <table class="libre">
+    <tbody>
+      <tr><td><b>Intentos fallidos</b></td><td>Tras 5 intentos con contraseña equivocada, el acceso se bloquea 5 minutos.</td></tr>
+      <tr><td><b>Sesión</b></td><td>Se cierra sola después de 30 minutos sin usarla. Al terminar, pulsa <b>Cerrar sesión</b>.</td></tr>
+      <tr><td><b>Volver al registro</b></td><td>Botón <b>Ir al registro</b>.</td></tr>
+    </tbody>
+  </table>
+  <p>Arriba están las secciones: <b>Operadores</b>, <b>Registro de asistencia</b>, <b>Tabla de asistencias</b>, <b>Reporte individual</b>, <b>Incidencias</b>, <b>Administradores</b> y <b>Respaldos</b>.</p>
+</section>
+
+<!-- ================= 4 ================= -->
+<section class="cap">
+  <h2><span class="num">CAPÍTULO 4</span>Operadores</h2>
+  <p class="lede">Alta, baja y registro del personal operador.</p>
+  <figure><img src="img/ad-02-operadores.jpg" alt="Lista de operadores"><figcaption>Figura 10. Lista de operadores con su horario vigente y sus huellas.</figcaption></figure>
+
+  <h3>Dar de alta a un operador</h3>
+  <ol class="pasos">
+    <li>Pulsa <b>Alta de operador</b>.</li>
+    <li>Llena nombre(s), apellido paterno, apellido materno (opcional), fecha de nacimiento, expediente y carrera. El expediente no se puede repetir.</li>
+    <li>En <b>Horario que estará en turno</b> agrega cada turno con <b>Agregar turno</b>: día, hora de entrada y hora de salida. No se permiten turnos empalmados el mismo día.</li>
+    <li>Pulsa <b>Registrar operador</b>. Enseguida se abre el registro de su huella.</li>
+  </ol>
+  <figure class="chica"><img src="img/ad-03-alta-operador.jpg" alt="Alta de operador"><figcaption>Figura 11. Alta de operador.</figcaption></figure>
+
+  <h3>Registrar la huella</h3>
+  <ol class="pasos">
+    <li>Elige el <b>dedo</b> (el sistema sugiere uno libre). Se recomiendan dos dedos por persona, por ejemplo índice derecho e izquierdo; el máximo es 2.</li>
+    <li>La primera vez, la persona lee el <b>aviso de privacidad</b> y se marca «La persona leyó y acepta el aviso de privacidad».</li>
+    <li>Pulsa <b>Iniciar captura</b> y pide a la persona que ponga el dedo varias veces (unas 4), quitándolo entre cada una. La pantalla muestra «Captura 2 de 4…».</li>
+    <li>Al terminar aparece «Huella registrada».</li>
+  </ol>
+  <figure class="mini"><img src="img/ad-04-registrar-huella.jpg" alt="Registrar huella"><figcaption>Figura 12. Registro de huella con aviso de privacidad.</figcaption></figure>
+  <div class="nota"><b class="t">Mientras se registra una huella</b><p>Nadie puede marcar entrada o salida (la pantalla de registro dice «El lector está ocupado»). Si hace falta, pulsa <b>Cancelar</b>. Si dice «huella duplicada», ese dedo ya está registrado: usa otro.</p></div>
+
+  <h3>Editar datos, huellas y horarios</h3>
+  <p>En la fila de cada operador:</p>
+  <table class="libre">
+    <tbody>
+      <tr><td><b>Datos</b></td><td>Corrige sus datos personales. Desde aquí también <b>Registrar huella</b> (agregar o reemplazar un dedo) y <b>Borrar huellas</b>.</td></tr>
+      <tr><td><b>Horarios</b></td><td>Cambia sus turnos. <b>El nuevo horario aplica desde hoy</b>: las asistencias y faltas anteriores se siguen calculando con el horario que tenía.</td></tr>
+    </tbody>
+  </table>
+  <figure class="mini"><img src="img/ad-06-horarios.jpg" alt="Horarios"><figcaption>Figura 13. Cambio de horario.</figcaption></figure>
+
+  <h3>Dar de baja y reingresar</h3>
+  <ol class="pasos">
+    <li>Pulsa <b>Dar de baja</b>, elige el motivo (renuncia, despido, fin de contrato u otro) y confirma.</li>
+    <li>La baja es <b>inmediata</b>: ya no puede registrar nada y no se le cuentan más faltas.</li>
+    <li>Sus datos se conservan <b>30 días</b>. En ese plazo, marca «Mostrar operadores dados de baja» y pulsa <b>Reingresar</b> si fue un error.</li>
+  </ol>
+  <div class="importante"><b class="t">Borrado definitivo</b><p>A los 30 días se borran todos sus datos, su huella y su historial, sin posibilidad de recuperarlos. Si necesitas su reporte, genera el PDF antes.</p></div>
+</section>
+
+<!-- ================= 5 ================= -->
+<section class="cap">
+  <h2><span class="num">CAPÍTULO 5</span>Reportes</h2>
+  <p class="lede">Todos los reportes se calculan al momento y se pueden guardar o imprimir en PDF con el botón <b>Generar PDF</b>.</p>
+
+  <h3>Periodos rápidos</h3>
+  <p>En los reportes por periodo, el campo <b>Periodo</b> ofrece: Hoy, Últimos 7 días, Últimos 30 días, Este mes, Mes anterior, Primera quincena (1–15), Segunda quincena (16–fin) y Este año. También puedes escribir la fecha inicial y final (queda como «Personalizado»).</p>
+
+  <h3>Registro de asistencia (un día)</h3>
+  <p>Todo el personal con turno ese día: entrada, salida y estado. Usa <b>Día anterior</b>, <b>Hoy</b> y <b>Día siguiente</b> para moverte. Arriba se resumen los turnos del día, presentes, retardos, faltas, pendientes y justificadas.</p>
+  <figure class="chica"><img src="img/ad-08-registro-del-dia-recorte.jpg" alt="Registro del día"><figcaption>Figura 14. Registro de asistencia del día.</figcaption></figure>
+
+  <h3>Tabla de asistencias</h3>
+  <p>Una fila por operador con: nombre, edad, expediente, carrera, asistencias, faltas, retardos, turnos incompletos, sin salida, fuera de horario y justificadas. El nombre lleva a su reporte individual.</p>
+  <figure><img src="img/ad-09-tabla-asistencias.jpg" alt="Tabla de asistencias"><figcaption>Figura 15. Tabla de asistencias del periodo.</figcaption></figure>
+
+  <h3>Reporte individual</h3>
+  <p>Elige al operador y el periodo. Muestra el resumen (asistencias, faltas, retardos, turnos incompletos, <b>tiempo total por cumplir</b> y justificadas) y las listas de asistencias, faltas, retardos (con minutos de retraso), turnos incompletos (con horas en turno y lo que le faltó), justificadas, el detalle por turno y los registros fuera de horario.</p>
+  <figure><img src="img/ad-10-reporte-individual.jpg" alt="Reporte individual"><figcaption>Figura 16. Reporte individual.</figcaption></figure>
+
+  <h3>Incidencias</h3>
+  <p>Consulta por <b>rango</b> de fechas o por <b>fecha específica</b>, y filtra por <b>tipo de incidencia</b> y por <b>operador que registró</b>. Muestra cuándo se registró, fecha y hora de la incidencia, programa, duración, tipo, observación y operador.</p>
+  <figure><img src="img/ad-13-incidencias.jpg" alt="Incidencias"><figcaption>Figura 17. Consulta de incidencias.</figcaption></figure>
+
+  <h3>Generar PDF</h3>
+  <ol class="pasos">
+    <li>En cualquier reporte, pulsa <b>Generar PDF</b>: se abre dentro de la pantalla.</li>
+    <li>Usa el botón de imprimir del visor o <b>Descargar</b> para guardarlo con su nombre.</li>
+    <li>El PDF sale en hoja membretada, con el periodo, quién lo generó y espacio para firmas de <b>Elaboró</b> y <b>Vo. Bo.</b></li>
+  </ol>
+  <figure class="mini"><img style="max-height:48mm" src="img/ad-14-visor-pdf.jpg" alt="Visor de PDF"><figcaption>Figura 18. PDF dentro de la pantalla, listo para imprimir o descargar.</figcaption></figure>
+</section>
+
+<!-- ================= 6 ================= -->
+<section class="cap">
+  <h2><span class="num">CAPÍTULO 6</span>Justificar y editar un turno</h2>
+  <p class="lede">Desde el <b>Registro de asistencia</b> o el <b>Reporte individual</b>, cada turno tiene sus botones.</p>
+  <h3>Justificar</h3>
+  <p>Aparece solo si el turno tiene falta, retardo o tiempo faltante. Escribe el <b>motivo</b> (obligatorio) y pulsa <b>Guardar justificación</b>. Un turno justificado deja de contar como falta, retardo o tiempo faltante. Se puede deshacer con <b>Quitar justificación</b>.</p>
+  <h3>Editar</h3>
+  <p>Cambia a mano el estatus del turno (Asistencia, Retardo o Falta), con un motivo opcional. El turno queda marcado como «Editado». Para deshacerlo, elige <b>Volver al estatus calculado</b>.</p>
+  <div class="par">
+    <figure><img src="img/ad-11-justificar.jpg" alt="Justificar"><figcaption>Figura 19. Justificar.</figcaption></figure>
+    <figure><img src="img/ad-12-editar-estatus.jpg" alt="Editar estatus"><figcaption>Figura 20. Editar estatus.</figcaption></figure>
+  </div>
+  <div class="nota"><b class="t">Conflicto de interés</b><p>Un administrador que también es operador no puede justificarse, editarse, cambiar su horario ni darse de baja a sí mismo: lo hace otro administrador. Todo cambio queda en la bitácora.</p></div>
+</section>
+
+<!-- ================= 7 ================= -->
+<section class="cap">
+  <h2><span class="num">CAPÍTULO 7</span>Administradores</h2>
+  <p class="lede">Solo los administradores entran a la administración.</p>
+  <figure><img src="img/ad-15-administradores.jpg" alt="Administradores"><figcaption>Figura 21. Administradores.</figcaption></figure>
+  <h3>Dar de alta a un administrador</h3>
+  <ol class="pasos">
+    <li>Pulsa <b>Alta de administrador</b>: usuario, nombre completo y contraseña (dos veces). La contraseña debe tener al menos 8 caracteres y no ser fácil de adivinar.</li>
+    <li>Si la persona también cubre turnos, elígela en <b>También es operador</b>: su huella registrará su propia entrada, salida e incidencias.</li>
+    <li>Pulsa <b>Crear administrador</b> y después registra su huella con el botón <b>Huella</b>.</li>
+  </ol>
+  <figure class="mini"><img src="img/ad-16-alta-administrador.jpg" alt="Alta de administrador"><figcaption>Figura 22. Alta de administrador.</figcaption></figure>
+  <table>
+    <thead><tr><th>Rol</th><th>Puede</th></tr></thead>
+    <tbody>
+      <tr><td>Operador</td><td>Registrar entrada, salida e incidencias. No entra a la administración.</td></tr>
+      <tr><td>Administrador</td><td>Todo lo de la administración: operadores, horarios, reportes, justificar, administradores y respaldos. Cambiar su propia contraseña.</td></tr>
+      <tr><td>Superusuario</td><td>Cuenta de respaldo del equipo desarrollador. Además, desactivar administradores y restablecer contraseñas ajenas. Nadie puede desactivarla.</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ================= 8 ================= -->
+<section class="cap">
+  <h2><span class="num">CAPÍTULO 8</span>Respaldos</h2>
+  <p class="lede">Copias de la base de datos, verificadas una por una, en la PC y en una memoria USB.</p>
+  <figure><img src="img/ad-17-respaldos.jpg" alt="Respaldos"><figcaption>Figura 23. Estado de los respaldos e historial.</figcaption></figure>
+  <ul>
+    <li>Se hace un respaldo <b>automático cada madrugada</b>, y al encender la PC si se pasó un día.</li>
+    <li>Se conservan <b>7 diarios y 4 semanales</b> (unas 4 semanas).</li>
+    <li><b>Respaldar ahora</b> hace uno en el momento. Debe decir «Verificado».</li>
+    <li>Si la USB no está conectada, el sistema sigue funcionando y lo avisa en esta pantalla.</li>
+  </ul>
+  <div class="nota"><b class="t">Memoria USB</b><p>Contiene datos personales: guárdala en un lugar seguro y, de preferencia, protégela con BitLocker To Go. Restaurar un respaldo es una tarea técnica (ver el manual técnico).</p></div>
+</section>
+
+<!-- ================= 9 ================= -->
+<section class="cap">
+  <h2><span class="num">CAPÍTULO 9</span>Cómo se calcula la asistencia</h2>
+  <p class="lede">Las reglas las aplica el sistema igual para todos. Las horas se comparan al minuto.</p>
+  <table>
+    <thead><tr><th>Término</th><th>Significado</th></tr></thead>
+    <tbody>
+      <tr><td>Asistencia</td><td>Registró su entrada y su salida, sin importar la hora.</td></tr>
+      <tr><td>Retardo</td><td>Registró su entrada <b>más de 15 minutos</b> después de la hora programada.</td></tr>
+      <tr><td>Falta</td><td>No registró entrada ni salida en un turno programado y el turno ya terminó (antes de eso aparece como «Pendiente»).</td></tr>
+      <tr><td>Turno incompleto</td><td>Estuvo menos tiempo del programado: por llegar tarde, salir antes o ambos.</td></tr>
+      <tr><td>Horas en turno</td><td>Desde la hora de entrada hasta la de salida, sin pasar de la hora programada de salida. Llegar antes sí cuenta.</td></tr>
+      <tr><td>Tiempo faltante</td><td>Horas programadas menos horas en turno. Una falta suma su turno completo.</td></tr>
+      <tr><td>Sin salida</td><td>Registró su entrada pero no su salida. No cuenta como asistencia hasta que se aclare.</td></tr>
+      <tr><td>Fuera de horario</td><td>Registros en días u horas sin turno programado. Se listan aparte y no cuentan como asistencia.</td></tr>
+      <tr><td>Justificada</td><td>Turno que un administrador justificó: ya no suma como falta, retardo ni tiempo faltante.</td></tr>
+    </tbody>
+  </table>
+  <div class="nota"><b class="t">Tolerancias</b><p>Tolerancia de retardo: 15 minutos. Salida sin aviso: hasta 3 minutos antes. Entrada permitida desde 60 minutos antes del turno. Estos valores se ajustan en la configuración del sistema sin cambiar el programa, siempre de acuerdo con el responsable del Control Maestro.</p></div>
+  <div style="break-inside: avoid">
+  <h3>Ejemplos de los requerimientos</h3>
+  <p>Una persona con turno el lunes de 07:00 a 12:00 (5 h) y el miércoles de 15:00 a 21:00 (6 h):</p>
+  <table>
+    <thead><tr><th>Caso</th><th>Registro</th><th>Resultado</th></tr></thead>
+    <tbody>
+      <tr><td>Caso 1 · lunes</td><td>Entrada 06:50, salida 11:30</td><td>Estuvo 4 h 40 min; le faltaron <b>20 min</b>. Turno incompleto.</td></tr>
+      <tr><td>Caso 2 · miércoles</td><td>Entrada 15:05, salida 21:00</td><td>No es retardo (dentro de los 15 min), pero le faltaron <b>5 min</b>. Turno incompleto.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ================= 10 ================= -->
+<section class="cap">
+  <h2><span class="num">CAPÍTULO 10</span>Preguntas frecuentes</h2>
+  <div class="dos-col">
+    <h4>Se fue la luz. ¿Se perdió algo?</h4>
+    <p>No. Lo registrado se guarda al momento. Al encender la PC e iniciar sesión, el sistema se abre solo.</p>
+    <h4>No hay internet. ¿Funciona?</h4>
+    <p>Sí. Todo funciona en la propia PC; no necesita internet.</p>
+    <h4>Olvidé registrar mi entrada.</h4>
+    <p>Avisa al administrador. Puede revisar el turno y, si corresponde, justificarlo o editar su estatus.</p>
+    <h4>Mi huella no se reconoce nunca.</h4>
+    <p>Usa el mismo dedo con el que te registraron, limpio y bien centrado. Si sigue, el administrador puede borrar tus huellas y registrarlas de nuevo.</p>
+    <h4>Cerré la pantalla por error.</h4>
+    <p>Abre el acceso directo <b>Control Maestro</b> del Escritorio. El sistema siguió funcionando.</p>
+    <h4>Olvidé mi contraseña de administrador.</h4>
+    <p>El superusuario puede restablecerla desde <b>Administradores</b>, o se restablece en la PC con el archivo de crear administrador (ver el manual técnico).</p>
+    <h4>¿Se puede cambiar la tolerancia de 15 minutos?</h4>
+    <p>Sí, en la configuración del sistema, sin cambiar el programa. Lo hace el equipo técnico.</p>
+    <h4>¿Qué pasa con mi huella si dejo el Control Maestro?</h4>
+    <p>Se borra junto con todos tus datos 30 días después de tu baja. El sistema no guarda imágenes de la huella.</p>
+  </div>
+</section>
+
+</main>
+</body>
+</html>
